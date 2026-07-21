@@ -39,7 +39,7 @@ return [
         'sso' => [
             'partner_code' => env('EGOV_SSO_PARTNER_CODE', 'HACKATHON_SSO'),
             'partner_secret' => env('EGOV_SSO_PARTNER_SECRET', '0d77fba530ee49f5b00e36fe947bd384'),
-            'base_url' => env('EGOV_SSO_BASE_URL', 'http://localhost:3000/egovph/sso'),
+            'base_url' => (env('EGOV_SSO_BASE_URL') && filter_var(env('EGOV_SSO_BASE_URL'), FILTER_VALIDATE_URL)) ? env('EGOV_SSO_BASE_URL') : 'http://localhost:3000/egovph/sso',
         ],
         'everify' => [
             'client_id' => env('EGOV_EVERIFY_CLIENT_ID', 'a24bef86-8826-48f7-aac5-978ca5805c29'),
