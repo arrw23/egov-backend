@@ -9,7 +9,7 @@ class OidcEGovIdentityProvider implements EGovIdentityProvider
     public function authorizationUrl(string $roleHint = 'applicant'): string
     {
         $baseUrl = config('services.egov.oidc_url', 'https://sso.egov.ph/authorize');
-        $clientId = config('services.egov.client_id', 'gabaymed_app');
+        $clientId = config('services.egov.client_id', 'eguarantee_app');
         return "{$baseUrl}?client_id={$clientId}&response_type=code&scope=openid+profile+philsys&role_hint={$roleHint}";
     }
 

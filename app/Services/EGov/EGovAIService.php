@@ -37,7 +37,7 @@ class EGovAIService
     public function aiAssistant(string $prompt, string $category = 'PH'): array
     {
         $session = (string) Str::uuid();
-        $response = "To obtain assistance or access government services through the eGovPH platform (Category: {$category}), citizens can file digital applications and verify identity using PhilSys. Query received: \"{$prompt}\". For medical guarantee letters, GabayMed connects citizens directly to DSWD AICS, PCSO, and hospital providers with zero-fee eGovChain ledger tracking.";
+        $response = "To obtain assistance or access government services through the eGovPH platform (Category: {$category}), citizens can file digital applications and verify identity using PhilSys. Query received: \"{$prompt}\". For service requirement building and medical guarantee letters, eGov's eGuarantee connects citizens directly to DSWD AICS, PCSO, and hospital providers with zero-fee eGovChain ledger tracking.";
 
         return [
             'status' => 200,

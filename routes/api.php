@@ -42,7 +42,7 @@ Route::post('/v1/egov/integration/document_extractor/generate', [EGovIntegration
 
 /*
 |--------------------------------------------------------------------------
-| GabayMed Application REST API (v1 Prefixed) -> /api/v1/*
+| eGov's eGuarantee Application REST API (v1 Prefixed) -> /api/v1/*
 |--------------------------------------------------------------------------
 */
 Route::prefix('v1')->group(function () {

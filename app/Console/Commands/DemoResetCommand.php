@@ -12,7 +12,7 @@ class DemoResetCommand extends Command
 
     public function handle(): int
     {
-        $this->info('Resetting GabayMed hackathon database...');
+        $this->info("Resetting eGov's eGuarantee hackathon database...");
 
         Artisan::call('migrate:fresh', [
             '--seed' => true,
