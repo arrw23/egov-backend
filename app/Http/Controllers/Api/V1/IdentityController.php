@@ -43,6 +43,12 @@ class IdentityController extends Controller
             ['verification_reference' => $profile->verification_reference]
         );
 
+        try {
+            $chain->anchorRecordOnBesu('IDENTITY-' . $user->id, hash('sha256', $profile->verification_reference), 'IDENTITY_VERIFIED');
+        } catch (\Exception $e) {
+            // Ignore error
+        }
+
         return response()->json([
             'status' => 'success',
             'badge' => 'PhilSys eVerify Verified',

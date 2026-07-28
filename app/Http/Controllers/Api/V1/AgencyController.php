@@ -11,6 +11,7 @@ use App\Models\MedicalCase;
 use App\Services\EGov\EGovAIService;
 use App\Services\EGov\EGovChainService;
 use App\Services\EGov\EMessageService;
+use App\Services\EGov\EReportService;
 use App\Services\EGov\MockEGovIdentityProvider;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -203,6 +204,21 @@ class AgencyController extends Controller
                 "Agency evaluator {$evaluator->name} approved ₱" . number_format($approvedAmount, 2) . " and issued Guarantee Letter {$glNumber}.",
                 ['gl_number' => $glNumber, 'chain_reference' => $chainRef]
             );
+
+            try {
+                app(EGovChainService::class)->anchorGuaranteeLetter($gl, $evaluator);
+                app(EMessageService::class)->send(
+                    $case->applicant,
+                    'Application Decision Notice',
+                    "Your application was approved and Guarantee Letter {$glNumber} was issued.",
+                    'success',
+                    'GuaranteeLetter',
+                    $gl->id
+                );
+                app(EReportService::class)->submitAuditReport('GUARANTEE_ISSUED', ['gl_number' => $glNumber], $evaluator);
+            } catch (\Exception $e) {
+                // Ignore failure
+            }
 
             return response()->json([
                 'status' => 'success',

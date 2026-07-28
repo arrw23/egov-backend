@@ -3,6 +3,7 @@
 namespace App\Domain;
 
 use App\Models\MedicalCase;
+use App\Models\User;
 use InvalidArgumentException;
 
 class CaseStateMachineService
@@ -43,14 +44,21 @@ class CaseStateMachineService
         return in_array($newStatus, $allowed, true);
     }
 
-    public function transition(MedicalCase $medicalCase, string $newStatus): MedicalCase
+    public function transition(MedicalCase $medicalCase, string $newStatus, ?User $actor = null): MedicalCase
     {
         if (!$this->canTransition($medicalCase->status, $newStatus)) {
             throw new InvalidArgumentException("Invalid case state transition from {$medicalCase->status} to {$newStatus}.");
         }
 
+        $oldStatus = $medicalCase->status;
         $medicalCase->status = $newStatus;
         $medicalCase->save();
+
+        try {
+            app(\App\Services\EGov\EGovChainService::class)->anchorCaseTransition($medicalCase, $oldStatus, $newStatus, $actor);
+        } catch (\Exception $e) {
+            // Chain anchoring failure should not block state transition
+        }
 
         return $medicalCase;
     }

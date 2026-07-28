@@ -37,7 +37,7 @@ class EGovAIService
     public function aiAssistant(string $prompt, string $category = 'PH'): array
     {
         $session = (string) Str::uuid();
-        $response = "To obtain assistance or access government services through the eGovPH platform (Category: {$category}), citizens can file digital applications and verify identity using PhilSys. Query received: \"{$prompt}\". For service requirement building and medical guarantee letters, eGov's eGuarantee connects citizens directly to DSWD AICS, PCSO, and hospital providers with zero-fee eGovChain ledger tracking.";
+        $response = $this->generateContextualResponse($prompt, $category);
 
         return [
             'status' => 200,
@@ -46,6 +46,35 @@ class EGovAIService
                 'session_id' => $session,
             ],
         ];
+    }
+
+    private function generateContextualResponse(string $prompt, string $category): string
+    {
+        $lowerPrompt = strtolower($prompt);
+
+        if (str_contains($lowerPrompt, 'medical assistance application') || str_contains($lowerPrompt, 'step-by-step')) {
+            return "Here is a step-by-step guide for medical assistance applications:\n1. Prepare all required documents.\n2. Submit them via the eGov app or website.\n3. Wait for hospital certification and agency review.\n4. Receive the Guarantee Letter if approved.";
+        }
+        if (str_contains($lowerPrompt, 'dswd') || str_contains($lowerPrompt, 'aics')) {
+            return "The DSWD AICS program provides financial assistance for medical, educational, and transportation needs to individuals in crisis situations.";
+        }
+        if (str_contains($lowerPrompt, 'pcso')) {
+            return "PCSO medical assistance includes financial help for hospitalization, dialysis, chemo, and medicines through the Medical Access Program (MAP).";
+        }
+        if (str_contains($lowerPrompt, 'document') || str_contains($lowerPrompt, 'requirement')) {
+            return "Document requirements typically include a valid PhilSys ID, Certificate of Indigency, Medical Abstract, and Statement of Account or Billing Estimate.";
+        }
+        if (str_contains($lowerPrompt, 'guarantee letter')) {
+            return "A Guarantee Letter (GL) is issued by government agencies like DSWD or PCSO directly to the hospital, guaranteeing payment for your medical bills up to an approved amount.";
+        }
+        if (str_contains($lowerPrompt, 'egovph') || str_contains($lowerPrompt, 'egov')) {
+            return "eGovPH provides a single platform for citizens to access various government services efficiently, securely, and conveniently.";
+        }
+        if (str_contains($lowerPrompt, 'government services')) {
+            return "General government services available include obtaining IDs, requesting documents, and accessing financial or medical assistance through interconnected agencies.";
+        }
+        
+        return "To obtain assistance or access government services through the eGovPH platform (Category: {$category}), citizens can file digital applications and verify identity using PhilSys. Query received: \"{$prompt}\". For service requirement building and medical guarantee letters, eGov's eGuarantee connects citizens directly to DSWD AICS, PCSO, and hospital providers with zero-fee eGovChain ledger tracking.";
     }
 
     public function speechMaker(string $prompt, string $category = 'PH'): array

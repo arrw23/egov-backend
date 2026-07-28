@@ -3,8 +3,12 @@
 namespace App\Services\EGov;
 
 use App\Models\AuditEvent;
+use App\Models\CaseDocument;
+use App\Models\GuaranteeLetter;
+use App\Models\GuaranteeUtilization;
 use App\Models\MedicalCase;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class EGovChainService
@@ -60,7 +64,8 @@ class EGovChainService
      */
     public function anchorRecordOnBesu(string $recordId, string $payloadHash, string $recordType = 'GUARANTEE_LETTER'): array
     {
-        $blockNumber = rand(1842000, 1849999);
+        $blockNumber = Cache::get('egov_chain_block', 1842000);
+        Cache::put('egov_chain_block', $blockNumber + 1);
         $txHash = '0x' . strtolower(hash('sha256', $recordId . $payloadHash . microtime()));
         $blockHash = '0x' . strtolower(hash('sha256', 'block_' . $blockNumber));
 
@@ -166,5 +171,61 @@ class EGovChainService
                     ],
                 ];
         }
+    }
+
+    public function anchorCaseTransition(MedicalCase $case, string $fromState, string $toState, ?User $actor, array $extraMeta = []): AuditEvent
+    {
+        $payloadHash = hash('sha256', json_encode(['case_id' => $case->id, 'from' => $fromState, 'to' => $toState, 'meta' => $extraMeta]));
+        $this->anchorRecordOnBesu('CASE-' . $case->id, $payloadHash, 'CASE_STATE_TRANSITION');
+        
+        return $this->recordEvent(
+            $case, 
+            $actor, 
+            'STATE_TRANSITION', 
+            "Transitioned from {$fromState} to {$toState}", 
+            array_merge($extraMeta, ['chain_anchored' => true])
+        );
+    }
+
+    public function anchorDocumentCertification(CaseDocument $doc, User $certifier): AuditEvent
+    {
+        $payloadHash = hash('sha256', json_encode(['document_id' => $doc->id, 'certifier_id' => $certifier->id]));
+        $this->anchorRecordOnBesu('DOC-' . $doc->id, $payloadHash, 'DOCUMENT_CERTIFICATION');
+        
+        return $this->recordEvent(
+            $doc->medicalCase, 
+            $certifier, 
+            'DOCUMENT_CERTIFIED', 
+            "Document {$doc->document_type} certified", 
+            ['document_id' => $doc->id, 'chain_anchored' => true]
+        );
+    }
+
+    public function anchorGuaranteeLetter(GuaranteeLetter $gl, User $issuer): AuditEvent
+    {
+        $payloadHash = hash('sha256', json_encode(['gl_number' => $gl->gl_number, 'approved_amount' => $gl->approved_amount]));
+        $this->anchorRecordOnBesu('GL-' . $gl->id, $payloadHash, 'GUARANTEE_LETTER_ISSUANCE');
+        
+        return $this->recordEvent(
+            $gl->medicalCase, 
+            $issuer, 
+            'GUARANTEE_LETTER_ISSUED', 
+            "Guarantee Letter {$gl->gl_number} issued for amount {$gl->approved_amount}", 
+            ['gl_number' => $gl->gl_number, 'approved_amount' => $gl->approved_amount, 'chain_anchored' => true]
+        );
+    }
+
+    public function anchorGuaranteeUtilization(GuaranteeUtilization $util, User $recorder): AuditEvent
+    {
+        $payloadHash = hash('sha256', json_encode(['utilization_id' => $util->id, 'amount' => $util->amount_utilized]));
+        $this->anchorRecordOnBesu('UTIL-' . $util->id, $payloadHash, 'GUARANTEE_UTILIZATION');
+        
+        return $this->recordEvent(
+            $util->guaranteeLetter?->medicalCase, 
+            $recorder, 
+            'UTILIZATION_RECORDED', 
+            "Recorded utilization of {$util->amount_utilized}", 
+            ['utilization_id' => $util->id, 'amount' => $util->amount_utilized, 'chain_anchored' => true]
+        );
     }
 }

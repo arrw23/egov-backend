@@ -12,6 +12,7 @@ use App\Models\HospitalDocumentRequest;
 use App\Models\MedicalCase;
 use App\Services\EGov\EGovAIService;
 use App\Services\EGov\EGovChainService;
+use App\Services\EGov\EGovPayService;
 use App\Services\EGov\EMessageService;
 use App\Services\EGov\MockEGovIdentityProvider;
 use Illuminate\Http\JsonResponse;
@@ -119,6 +120,12 @@ class HospitalController extends Controller
             ['document_id' => $document->id]
         );
 
+        try {
+            app(EGovChainService::class)->anchorDocumentCertification($document, $staff);
+        } catch (\Exception $e) {
+            // Do not block execution
+        }
+
         return response()->json([
             'status' => 'success',
             'message' => 'Document certified successfully.',
@@ -210,6 +217,22 @@ class HospitalController extends Controller
 
         // Notify Applicant
         $applicant = $guarantee->medicalCase->applicant;
+        
+        try {
+            app(EGovPayService::class)->initiateDirectSettlement($guarantee, $utilization);
+            app(EGovChainService::class)->anchorGuaranteeUtilization($utilization, $staff);
+            app(\App\Services\EGov\EMessageService::class)->send(
+                $applicant,
+                'Guarantee Letter Utilized',
+                "₱" . number_format($utilizedAmount, 2) . " guarantee utilization recorded by {$guarantee->hospital_name}.",
+                'success',
+                'GuaranteeLetter',
+                $guarantee->id
+            );
+        } catch (\Exception $e) {
+            // Ignore failure
+        }
+        
         $eMessage->send(
             $applicant,
             'Guarantee Letter Utilized',

@@ -28,6 +28,23 @@ class AuthController extends Controller
         $result = $provider->exchangeCode($code);
         $user = $provider->resolveUser(str_replace('mock_code_', '', $code));
 
+        try {
+            $sso = app(\App\Services\EGov\EGovSSOService::class);
+            $tokenData = $sso->exchangeToken($code);
+            $token = $tokenData['access_token'] ?? 'mock_token';
+            $profile = $sso->fetchProfile($token);
+            
+            // Create/update user from profile data
+            $user->update([
+                'name' => $profile['name'] ?? $user->name,
+                'email' => $profile['email'] ?? $user->email,
+            ]);
+            
+            app(\App\Services\EGov\EReportService::class)->submitAuditReport('SSO_LOGIN', ['sub' => $user->egov_sub], $user);
+        } catch (\Exception $e) {
+            // Ignore error, fallback to mock behavior
+        }
+
         Auth::login($user);
 
         return response()->json([

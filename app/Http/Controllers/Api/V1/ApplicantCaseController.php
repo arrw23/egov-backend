@@ -14,6 +14,7 @@ use App\Models\Organization;
 use App\Services\EGov\EGovAIService;
 use App\Services\EGov\EGovChainService;
 use App\Services\EGov\EMessageService;
+use App\Services\EGov\EReportService;
 use App\Services\EGov\MockEGovIdentityProvider;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -90,6 +91,20 @@ class ApplicantCaseController extends Controller
             "Medical assistance case {$caseNumber} created for {$case->patient_name}",
             ['case_number' => $caseNumber]
         );
+
+        try {
+            app(EMessageService::class)->send(
+                $user,
+                'Case Created',
+                "Your medical assistance case {$caseNumber} has been successfully created.",
+                'info',
+                'MedicalCase',
+                $case->id
+            );
+            app(EReportService::class)->submitAuditReport('CASE_CREATED', ['case_id' => $case->id], $user);
+        } catch (\Exception $e) {
+            // Ignore error
+        }
 
         return response()->json([
             'status' => 'success',
@@ -170,6 +185,12 @@ class ApplicantCaseController extends Controller
             ['document_id' => $doc->id, 'hash' => $hash]
         );
 
+        try {
+            app(EReportService::class)->submitAuditReport('DOCUMENT_UPLOADED', ['document_id' => $doc->id], $user);
+        } catch (\Exception $e) {
+            // Ignore error
+        }
+
         return response()->json([
             'status' => 'success',
             'message' => 'Document uploaded, classified by eGov AI, and recorded on eGovChain timeline.',
@@ -195,14 +216,18 @@ class ApplicantCaseController extends Controller
 
         // Notify Hospital Staff
         $hospitalStaff = (new MockEGovIdentityProvider())->resolveUser('hospital');
-        $eMessage->send(
-            $hospitalStaff,
-            'New Hospital Record Request',
-            "Applicant {$user->name} requested certified records for case {$case->case_number}.",
-            'info',
-            'MedicalCase',
-            $case->id
-        );
+        try {
+            $eMessage->send(
+                $hospitalStaff,
+                'New Hospital Record Request',
+                "Applicant {$user->name} requested certified records for case {$case->case_number}.",
+                'info',
+                'MedicalCase',
+                $case->id
+            );
+        } catch (\Exception $e) {
+            // Ignore error
+        }
 
         $chain->recordEvent(
             $case,
@@ -261,14 +286,18 @@ class ApplicantCaseController extends Controller
         $user = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('applicant');
         $evaluator = (new MockEGovIdentityProvider())->resolveUser('agency');
 
-        $eMessage->send(
-            $evaluator,
-            'New Assistance Application Received',
-            "New medical assistance request {$case->case_number} submitted for review.",
-            'info',
-            'AgencyApplication',
-            $app->id
-        );
+        try {
+            $eMessage->send(
+                $evaluator,
+                'New Assistance Application Received',
+                "New medical assistance request {$case->case_number} submitted for review.",
+                'info',
+                'AgencyApplication',
+                $app->id
+            );
+        } catch (\Exception $e) {
+            // Ignore error
+        }
 
         $chain->recordEvent(
             $case,

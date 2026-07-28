@@ -2,6 +2,8 @@
 
 namespace App\Services\EGov;
 
+use App\Models\GuaranteeLetter;
+
 class CompassBudgetService
 {
     protected string $apiKey;
@@ -13,14 +15,18 @@ class CompassBudgetService
 
     public function getBudgetStatus(string $programCode = 'DSWD-AICS'): array
     {
+        $totalAllocation = 20000000.00;
+        $utilizedAmount = GuaranteeLetter::where('status', 'active')->sum('approved_amount');
+        $remainingBalance = $totalAllocation - $utilizedAmount;
+
         return [
             'program_code' => $programCode,
             'fund_source' => 'GAA 2026 DSWD AICS Budget Allocation',
-            'total_allocation' => 20000000.00,
-            'utilized_amount' => 5200000.00,
-            'remaining_balance' => 14800000.00,
+            'total_allocation' => $totalAllocation,
+            'utilized_amount' => $utilizedAmount,
+            'remaining_balance' => $remainingBalance,
             'compass_reference' => 'DBM-COMPASS-2026-AICS-NCR',
-            'status' => 'Active · Funds Available',
+            'status' => 'Active A Funds Available',
         ];
     }
 }
