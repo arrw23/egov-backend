@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Route;
 Route::middleware([HandleCors::class])->group(function () {
     Route::get('/', function () {
         return response()->json([
-            'system' => "eGov's eGuarantee Platform",
+            'system' => "GabayMed Platform",
             'status' => 'online',
             'integrated_services' => [
                 'eGov SSO',

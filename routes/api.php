@@ -42,7 +42,7 @@ Route::post('/v1/egov/integration/document_extractor/generate', [EGovIntegration
 
 /*
 |--------------------------------------------------------------------------
-| eGov's eGuarantee Application REST API (v1 Prefixed) -> /api/v1/*
+| GabayMed Application REST API (v1 Prefixed) -> /api/v1/*
 |--------------------------------------------------------------------------
 */
 Route::prefix('v1')->group(function () {
@@ -89,7 +89,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/hospital/requests', [HospitalController::class, 'pendingRequests']);
     Route::get('/hospital/requests/{docReq}', [HospitalController::class, 'showRequest']);
     Route::post('/hospital/requests/{docReq}/documents', [HospitalController::class, 'submitDocuments']);
+    Route::post('/hospital/cases/{case}/documents', [HospitalController::class, 'uploadHospitalDocument']);
     Route::post('/documents/{document}/certify', [HospitalController::class, 'certifyDocument']);
+    Route::get('/documents/{document}/verify-blockchain', [HospitalController::class, 'verifyDocumentBlockchain']);
     Route::post('/guarantees/validate', [HospitalController::class, 'validateGuarantee']);
     Route::post('/guarantees/{guarantee}/utilizations', [HospitalController::class, 'recordUtilization']);
 

@@ -74,7 +74,7 @@ class EGovAIService
             return "General government services available include obtaining IDs, requesting documents, and accessing financial or medical assistance through interconnected agencies.";
         }
         
-        return "To obtain assistance or access government services through the eGovPH platform (Category: {$category}), citizens can file digital applications and verify identity using PhilSys. Query received: \"{$prompt}\". For service requirement building and medical guarantee letters, eGov's eGuarantee connects citizens directly to DSWD AICS, PCSO, and hospital providers with zero-fee eGovChain ledger tracking.";
+        return "To obtain assistance or access government services through the eGovPH platform (Category: {$category}), citizens can file digital applications and verify identity using PhilSys. Query received: \"{$prompt}\". For service requirement building and medical guarantee letters, GabayMed connects citizens directly to DSWD AICS, PCSO, and hospital providers with zero-fee eGovChain ledger tracking.";
     }
 
     public function speechMaker(string $prompt, string $category = 'PH'): array
