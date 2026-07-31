@@ -198,9 +198,9 @@ class ApplicantCaseController extends Controller
             'title' => $title,
             'storage_path' => $storagePath,
             'file_size' => $fileSize,
-            'status' => 'verified',
+            'status' => 'hashed',
             'sha256_hash' => $hash,
-            'verification_reference' => 'VER-DOC-' . strtoupper(substr(md5($hash), 0, 8)),
+            'verification_reference' => 'HSH-DOC-' . strtoupper(substr(md5($hash), 0, 8)),
             'extracted_json' => $extractedInfo,
         ]);
 
@@ -209,7 +209,7 @@ class ApplicantCaseController extends Controller
             $case,
             $user,
             'DOCUMENT_UPLOADED',
-            "Uploaded applicant document: {$title} (Anchored to eGovChain)",
+            "Uploaded applicant document: {$title} (Anchored to eGovChain, Pending Hospital Verification)",
             [
                 'document_id' => $doc->id,
                 'hash' => $hash,
@@ -225,7 +225,7 @@ class ApplicantCaseController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Document uploaded, classified by eGov AI, and verified on eGovChain blockchain.',
+            'message' => 'Document uploaded and anchored to eGovChain blockchain. Awaiting hospital verification.',
             'document' => $doc,
         ]);
     }
