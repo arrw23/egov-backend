@@ -23,4 +23,9 @@ yarn-error.log
 /.zed
 EGOV_APIS_SHOWCASE.md
 EGOV_APIS_SHOWCASE*.md
+docs/
+*demo*.html
+*DEMO*
+DEMO_SCRIPT*
+*.html
 
