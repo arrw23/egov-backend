@@ -7,12 +7,12 @@ use Illuminate\Support\Str;
 
 class FaceLivenessService
 {
-    protected string $apiKey;
+    protected ?string $apiKey;
     protected string $baseUrl;
 
     public function __construct()
     {
-        $this->apiKey = config('services.egov.face_liveness.api_key', '9e31b23d-eeb4-ae08-ff13-cdf8380e5307');
+        $this->apiKey = config('services.egov.face_liveness.api_key');
         $this->baseUrl = config('services.egov.face_liveness.base_url', 'https://hackathon-face-liveness.e.gov.ph');
     }
 
@@ -42,7 +42,14 @@ class FaceLivenessService
                 }
             }
         } catch (\Exception $e) {
+            if (str_starts_with($this->baseUrl, 'https://')) {
+                return ['status' => 502, 'data' => ['message' => 'Face liveness service is unavailable.']];
+            }
             // Fall through to resilient generated token
+        }
+
+        if (str_starts_with($this->baseUrl, 'https://')) {
+            return ['status' => $response->status(), 'data' => ['message' => 'Face liveness session creation failed.']];
         }
 
         // Resilient fallback token generation
@@ -76,7 +83,14 @@ class FaceLivenessService
                 }
             }
         } catch (\Exception $e) {
+            if (str_starts_with($this->baseUrl, 'https://')) {
+                return ['status' => 502, 'data' => ['message' => 'Face liveness service is unavailable.']];
+            }
             // Fall through to resilient mock result
+        }
+
+        if (str_starts_with($this->baseUrl, 'https://')) {
+            return ['status' => $response->status(), 'data' => ['message' => 'Face liveness result retrieval failed.']];
         }
 
         return [
@@ -98,7 +112,7 @@ class FaceLivenessService
             'anti_spoofing' => 'passed',
             'reference_id' => 'LIVENESS-FACE-' . strtoupper(substr(md5(time()), 0, 8)),
             'timestamp' => now()->toIso8601String(),
-            'api_key_used' => substr($this->apiKey, 0, 8) . '...',
+            'provider' => 'eGov Face Liveness',
         ];
     }
 }

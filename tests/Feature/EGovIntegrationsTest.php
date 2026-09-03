@@ -22,7 +22,7 @@ class EGovIntegrationsTest extends TestCase
             'exchange_code' => 'generated_exchange_code',
             'scope' => 'SSO_AUTHENTICATION',
             'partner_code' => 'HACKATHON_SSO',
-            'partner_secret' => '0d77fba530ee49f5b00e36fe947bd384',
+            'partner_secret' => (string) config('services.egov.sso.partner_secret'),
         ]);
 
         $tokenRes->assertStatus(200)
@@ -47,7 +47,7 @@ class EGovIntegrationsTest extends TestCase
         // 1. Auth: POST /api/auth
         $authRes = $this->postJson('/api/auth', [
             'client_id' => 'a24bef86-8826-48f7-aac5-978ca5805c29',
-            'client_secret' => '1EQT3mEC8GqEYCcUufaylPewnWi052VcJdnAOmIPHFy5zbUv0JcqVEwf7DSeb1OB',
+            'client_secret' => (string) config('services.egov.everify.client_secret'),
         ]);
         $authRes->assertStatus(200)
             ->assertJsonStructure(['data' => ['access_token', 'token_type', 'expires_at']]);
@@ -120,6 +120,10 @@ class EGovIntegrationsTest extends TestCase
         // Translator
         $trans = $this->postJson('/api/v1/egov/integration/translator/generate', ['prompt' => 'Hello world', 'source_lang' => 'en', 'target_lang' => 'fil']);
         $trans->assertStatus(200)->assertJsonStructure(['translated_prompt']);
+
+        // Credits
+        $credits = $this->getJson('/api/v1/egov/integration/credits');
+        $credits->assertStatus(200)->assertJsonStructure(['credits_total', 'credits_remaining']);
     }
 
     public function test_egovchain_hyperledger_besu_json_rpc(): void
@@ -133,6 +137,60 @@ class EGovIntegrationsTest extends TestCase
         ]);
         $block->assertStatus(200)->assertJsonPath('jsonrpc', '2.0');
 
+        // rpc_modules
+        $mods = $this->postJson('/api/v1/egovchain/rpc', [
+            'jsonrpc' => '2.0',
+            'method' => 'rpc_modules',
+            'params' => [],
+            'id' => 1,
+        ]);
+        $mods->assertStatus(200)->assertJsonStructure(['result' => ['eth', 'net', 'web3', 'txpool']]);
+
+        // net_version
+        $net = $this->postJson('/api/v1/egovchain/rpc', [
+            'jsonrpc' => '2.0',
+            'method' => 'net_version',
+            'params' => [],
+            'id' => 1,
+        ]);
+        $net->assertStatus(200)->assertJsonPath('result', '13371');
+
+        // eth_chainId
+        $chain = $this->postJson('/api/v1/egovchain/rpc', [
+            'jsonrpc' => '2.0',
+            'method' => 'eth_chainId',
+            'params' => [],
+            'id' => 1,
+        ]);
+        $chain->assertStatus(200)->assertJsonPath('result', '0x343b');
+
+        // eth_gasPrice (zero fee)
+        $gas = $this->postJson('/api/v1/egovchain/rpc', [
+            'jsonrpc' => '2.0',
+            'method' => 'eth_gasPrice',
+            'params' => [],
+            'id' => 1,
+        ]);
+        $gas->assertStatus(200)->assertJsonPath('result', '0x0');
+
+        // txpool_besuStatistics
+        $txp = $this->postJson('/api/v1/egovchain/rpc', [
+            'jsonrpc' => '2.0',
+            'method' => 'txpool_besuStatistics',
+            'params' => [],
+            'id' => 1,
+        ]);
+        $txp->assertStatus(200)->assertJsonStructure(['result' => ['localCount', 'remoteCount']]);
+
+        // eth_call - HackathonGuestbook teamCount()
+        $call = $this->postJson('/api/v1/egovchain/rpc', [
+            'jsonrpc' => '2.0',
+            'method' => 'eth_call',
+            'params' => [['to' => '0x52B6c6ffc6b5413F09C2E3C9a85703f848EaF014', 'data' => '0x7d0a5142'], 'latest'],
+            'id' => 1,
+        ]);
+        $call->assertStatus(200)->assertJsonStructure(['result']);
+
         // egov_anchorRecord
         $anchor = $this->postJson('/api/v1/egovchain/anchor', [
             'record_id' => 'GL-DSWD-2026-04821',
@@ -140,4 +198,196 @@ class EGovIntegrationsTest extends TestCase
         ]);
         $anchor->assertStatus(200)->assertJsonPath('result.chain_name', 'eGovChain (Hyperledger Besu)');
     }
+
+    public function test_emessage_sms_push(): void
+    {
+        // 1. Successful push
+        $res = $this->postJson('/messaging/v1/sms/push', [
+            'number' => '+639090000000',
+            'message' => 'Test message',
+        ]);
+        $res->assertStatus(201)
+            ->assertJsonStructure(['data' => ['message']]);
+
+        // 2. Validation error (missing required fields)
+        $invalid = $this->postJson('/messaging/v1/sms/push', []);
+        $invalid->assertStatus(422)
+            ->assertJsonPath('error', 'unprocessable_entity');
+    }
+
+    public function test_egovpay_transactions(): void
+    {
+        // 1. Create Transaction (POST /api/v1/transaction)
+        $createRes = $this->postJson('/api/v1/transaction', [
+            'amount' => 1000,
+            'txnid' => 'TESTREF123',
+            'name' => 'JOSIE SANTOS DELA CRUZ',
+            'items' => [
+                ['name' => 'Medical Hospital Assistance Settlement', 'amount' => 1000]
+            ],
+        ]);
+        $createRes->assertStatus(201)
+            ->assertJsonStructure(['data' => ['uuid', 'url', 'channel' => ['refno']]]);
+
+        $uuid = $createRes->json('data.uuid');
+
+        // 2. Query Transaction Details (GET /api/v1/transaction/{uuid})
+        $getRes = $this->getJson("/api/v1/transaction/{$uuid}");
+        $getRes->assertStatus(200)
+            ->assertJsonPath('data.uuid', $uuid);
+
+        // 3. Void Transaction (PUT /api/v1/transaction/{uuid}/void)
+        $voidRes = $this->putJson("/api/v1/transaction/{$uuid}/void");
+        $voidRes->assertStatus(200)
+            ->assertJsonStructure(['data' => ['message']]);
+
+        // 4. Direct Settlement route
+        $settleRes = $this->postJson('/api/v1/pay/settle', [
+            'gl_number' => 'GL-DSWD-2026-04821',
+            'amount' => 50000,
+            'payee_organization' => 'Manila General Hospital',
+        ]);
+        $settleRes->assertStatus(200)
+            ->assertJsonPath('status', 'initiated');
+    }
+
+    public function test_ereport_integration_flows(): void
+    {
+        // 1. Generate Token
+        $tokenRes = $this->postJson('/api/integration/token', [
+            'access_code' => '2a72bdcac1b0405fb2c679d029f03cfb',
+        ]);
+        $tokenRes->assertStatus(200)
+            ->assertJsonStructure(['access_token', 'expires_at']);
+
+        $token = $tokenRes->json('access_token');
+
+        // 2. Report Type List
+        $typesRes = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/integration/datasets/report_types');
+        $typesRes->assertStatus(200)
+            ->assertJsonStructure(['jsonapi', 'data']);
+
+        // 3. Region List
+        $regionsRes = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/integration/datasets/regions');
+        $regionsRes->assertStatus(200)
+            ->assertJsonStructure(['jsonapi', 'data']);
+
+        // 4. Province List by Params
+        $provincesRes = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/integration/datasets/provinces?region_code=040000000');
+        $provincesRes->assertStatus(200)
+            ->assertJsonStructure(['jsonapi', 'data']);
+
+        // 5. Municipality List by Params
+        $munisRes = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/integration/datasets/municipalities?province_code=042100000');
+        $munisRes->assertStatus(200)
+            ->assertJsonStructure(['jsonapi', 'data']);
+
+        // 6. Barangay List by Params
+        $brgyRes = $this->withHeader('Authorization', "Bearer {$token}")
+            ->getJson('/api/integration/datasets/barangays?municipality_code=042111000');
+        $brgyRes->assertStatus(200)
+            ->assertJsonStructure(['jsonapi', 'data']);
+
+        // 7. Submit Complaint
+        $complaintRes = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/integration/submit_complaint', [
+                'mobile' => '639090000000',
+                'first_name' => 'Josie',
+                'last_name' => 'Dela Cruz',
+                'gender' => 'Female',
+                'complainant_email' => 'josie@yopmail.com',
+                'report_type' => 'red_tape',
+                'subject' => 'Delayed Medical Clearance Evaluation',
+                'message' => 'Hospital social work assessment processing exceeded standard processing time.',
+                'region_code' => '040000000',
+                'province_code' => '042100000',
+                'municipality_code' => '042111000',
+                'barangay_code' => '042111011',
+            ]);
+        $complaintRes->assertStatus(200)
+            ->assertJsonPath('code', 200)
+            ->assertJsonStructure(['case_number']);
+
+        $caseNumber = $complaintRes->json('case_number');
+
+        // 8. Verify - Request OTP
+        $otpReq = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/integration/verify/request', [
+                'email' => 'josie@yopmail.com',
+            ]);
+        $otpReq->assertStatus(200)
+            ->assertJsonPath('code', 200);
+
+        // 9. Verify - Confirm OTP
+        $otpConf = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/integration/verify/confirm', [
+                'email' => 'josie@yopmail.com',
+                'otp' => '000000',
+            ]);
+        $otpConf->assertStatus(200)
+            ->assertJsonStructure(['code', 'report_view_token']);
+
+        $viewToken = $otpConf->json('report_view_token');
+
+        // 10. Reports List
+        $reportsRes = $this->withHeader('X-EReport-View-Token', $viewToken)
+            ->getJson('/api/integration/reports');
+        $reportsRes->assertStatus(200)
+            ->assertJsonStructure(['jsonapi', 'data']);
+
+        // 11. View Report by Case Number
+        $viewRes = $this->withHeader('X-EReport-View-Token', $viewToken)
+            ->getJson("/api/integration/reports/{$caseNumber}");
+        $viewRes->assertStatus(200)
+            ->assertJsonStructure(['data' => ['id', 'case_number', 'complainant']]);
+    }
+
+    public function test_compass_integration_records(): void
+    {
+        // 1. SAAODB Dashboard
+        $dashRes = $this->getJson('/api/v1/records/saaodb/dashboard?reportYear=2026&sheetScope=summary');
+        $dashRes->assertStatus(200)
+            ->assertJsonStructure(['reportYear', 'sheetScope', 'cascade', 'rates', 'classBreakdown']);
+
+        // 2. SAAODB Records
+        $recRes = $this->getJson('/api/v1/records/saaodb?reportYear=2026&period=FY&class=PS&sheetScope=summary&entityName=Agriculture&page=1&limit=100');
+        $recRes->assertStatus(200)
+            ->assertJsonStructure(['data', 'total', 'page', 'limit']);
+
+        // 3. SAAODB Entities
+        $entRes = $this->getJson('/api/v1/records/saaodb/entities?reportYear=2026&sheetScope=agency&expandParent=Department of Finance');
+        $entRes->assertStatus(200)
+            ->assertJsonStructure(['reportYear', 'sheetScope', 'entities']);
+
+        // 4. NCA Records
+        $ncaRes = $this->getJson('/api/v1/records/nca?budgetYear=2026&deptCode=010000000000&agencyCode=010010000000&page=1&limit=100');
+        $ncaRes->assertStatus(200)
+            ->assertJsonStructure(['data', 'total', 'page', 'limit']);
+
+        // 5. SARO Records
+        $saroRes = $this->getJson('/api/v1/records/saro?saroNo=SARO-BMB-A-26-0000001&page=1&limit=100');
+        $saroRes->assertStatus(200)
+            ->assertJsonStructure(['data', 'total', 'page', 'limit']);
+
+        // 6. LGSF Records
+        $lgsfRes = $this->getJson('/api/v1/records/lgsf?fiscalYear=2026&programCode=FALGU&province=Bulacan&cityMunicipality=Malolos&page=1&limit=100');
+        $lgsfRes->assertStatus(200)
+            ->assertJsonStructure(['data', 'total', 'page', 'limit']);
+
+        // 7. LGSF Dashboard
+        $lgsfDash = $this->getJson('/api/v1/records/lgsf/dashboard?programCode=FALGU&reportYear=2026&province=Bulacan&municipality=Malolos&page=1&limit=25');
+        $lgsfDash->assertStatus(200)
+            ->assertJsonStructure(['programCode', 'reportYear', 'kpis', 'projects']);
+
+        // 8. DSWD Live Budget Status
+        $budRes = $this->getJson('/api/compass/budget?program_code=DSWD-AICS');
+        $budRes->assertStatus(200)
+            ->assertJsonStructure(['program_code', 'total_allocation', 'utilized_amount', 'remaining_balance']);
+    }
 }
+
+

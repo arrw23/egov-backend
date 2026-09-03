@@ -3,17 +3,18 @@
 namespace App\Services\EGov;
 
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Http;
 
 class EGovSSOService
 {
-    protected string $partnerCode;
-    protected string $partnerSecret;
+    protected ?string $partnerCode;
+    protected ?string $partnerSecret;
     protected string $baseUrl;
 
     public function __construct()
     {
-        $this->partnerCode = config('services.egov.sso.partner_code', 'HACKATHON_SSO');
-        $this->partnerSecret = config('services.egov.sso.partner_secret', '0d77fba530ee49f5b00e36fe947bd384');
+        $this->partnerCode = config('services.egov.sso.partner_code');
+        $this->partnerSecret = config('services.egov.sso.partner_secret');
         $this->baseUrl = config('services.egov.sso.base_url', 'http://localhost:3000/egovph/sso');
     }
 
@@ -24,6 +25,16 @@ class EGovSSOService
                 'status' => 422,
                 'data' => ['message' => 'The exchange code is invalid or has already been used/expired.'],
             ];
+        }
+
+        if (str_starts_with($this->baseUrl, 'https://')) {
+            $response = Http::asJson()->timeout(15)->post(rtrim($this->baseUrl, '/') . '/api/token', [
+                'exchange_code' => $exchangeCode,
+                'scope' => $scope ?: 'SSO_AUTHENTICATION',
+                'partner_code' => $this->partnerCode,
+                'partner_secret' => $this->partnerSecret,
+            ]);
+            return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eGov SSO returned an empty response.']];
         }
 
         if ($partnerCode !== $this->partnerCode || $partnerSecret !== $this->partnerSecret) {
@@ -61,6 +72,12 @@ class EGovSSOService
                 'status' => 401,
                 'data' => ['message' => 'Unauthorized. Access token is missing, invalid, or expired.'],
             ];
+        }
+
+        if (str_starts_with($this->baseUrl, 'https://')) {
+            $response = Http::withToken(str_replace('Bearer ', '', $bearerToken))->timeout(15)
+                ->post(rtrim($this->baseUrl, '/') . '/api/partner/sso_authentication');
+            return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eGov SSO returned an empty response.']];
         }
 
         return [

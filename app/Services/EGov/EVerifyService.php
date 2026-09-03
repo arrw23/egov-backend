@@ -5,16 +5,19 @@ namespace App\Services\EGov;
 use App\Models\ApplicantProfile;
 use App\Models\User;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Http;
 
 class EVerifyService
 {
-    protected string $clientId;
-    protected string $clientSecret;
+    protected ?string $clientId;
+    protected ?string $clientSecret;
+    protected string $baseUrl;
 
     public function __construct()
     {
-        $this->clientId = config('services.egov.everify.client_id', 'a24bef86-8826-48f7-aac5-978ca5805c29');
-        $this->clientSecret = config('services.egov.everify.client_secret', '1EQT3mEC8GqEYCcUufaylPewnWi052VcJdnAOmIPHFy5zbUv0JcqVEwf7DSeb1OB');
+        $this->clientId = config('services.egov.everify.client_id');
+        $this->clientSecret = config('services.egov.everify.client_secret');
+        $this->baseUrl = config('services.egov.everify.base_url', 'http://localhost:3000/egovph/everify');
     }
 
     public function authenticate(string $clientId, string $clientSecret): array
@@ -24,6 +27,14 @@ class EVerifyService
                 'status' => 403,
                 'data' => ['message' => 'Forbidden. Invalid client credentials.'],
             ];
+        }
+
+        if (str_starts_with($this->baseUrl, 'https://')) {
+            $response = Http::asJson()->timeout(15)->post(rtrim($this->baseUrl, '/') . '/api/auth', [
+                'client_id' => $clientId ?: $this->clientId,
+                'client_secret' => $clientSecret ?: $this->clientSecret,
+            ]);
+            return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eVerify returned an empty response.']];
         }
 
         return [
@@ -42,8 +53,12 @@ class EVerifyService
         ];
     }
 
-    public function verifyDemographics(array $params): array
+    public function verifyDemographics(array $params, string $token = ''): array
     {
+        if (str_starts_with($this->baseUrl, 'https://')) {
+            $response = $this->liveRequest('/api/query', $params, $token);
+            if ($response !== null) return $response;
+        }
         $firstName = strtoupper($params['first_name'] ?? 'JUAN');
         $middleName = strtoupper($params['middle_name'] ?? 'SANTOS');
         $lastName = strtoupper($params['last_name'] ?? 'DELA CRUZ');
@@ -97,8 +112,12 @@ class EVerifyService
         ];
     }
 
-    public function checkQr(string $qrValue): array
+    public function checkQr(string $qrValue, string $token = ''): array
     {
+        if (str_starts_with($this->baseUrl, 'https://')) {
+            $response = $this->liveRequest('/api/query/qr/check', ['value' => $qrValue], $token);
+            if ($response !== null) return $response;
+        }
         if (empty($qrValue)) {
             return [
                 'status' => 422,
@@ -117,8 +136,12 @@ class EVerifyService
         ];
     }
 
-    public function verifyQr(string $qrValue, string $sessionId): array
+    public function verifyQr(string $qrValue, string $sessionId, string $token = ''): array
     {
+        if (str_starts_with($this->baseUrl, 'https://')) {
+            $response = $this->liveRequest('/api/query/qr', ['value' => $qrValue, 'face_liveness_session_id' => $sessionId], $token);
+            if ($response !== null) return $response;
+        }
         return [
             'status' => 200,
             'data' => [
@@ -164,6 +187,15 @@ class EVerifyService
                 'result_grade' => 1,
             ],
         ];
+    }
+
+    private function liveRequest(string $path, array $payload, string $token = ''): ?array
+    {
+        $http = Http::asJson()->timeout(20);
+        if ($token !== '') $http = $http->withToken(str_replace('Bearer ', '', $token));
+        $response = $http->post(rtrim($this->baseUrl, '/') . $path, $payload);
+        if (!$response->successful()) return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eVerify request failed.']];
+        return ['status' => $response->status(), 'data' => $response->json() ?: []];
     }
 
     public function recordConsentAndVerify(User $user, bool $consentGiven): ApplicantProfile

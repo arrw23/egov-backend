@@ -29,5 +29,14 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
+        <!-- Keep the test suite deterministic and never call live provider APIs. -->
+        <env name="EGOV_SSO_BASE_URL" value="http://localhost:3000/egovph/sso" force="true"/>
+        <env name="EGOV_EVERIFY_BASE_URL" value="http://localhost:3000/egovph/everify" force="true"/>
+        <env name="EGOV_AI_BASE_URL" value="http://localhost:3000/egovph/ai" force="true"/>
+        <env name="EGOV_FACE_LIVENESS_BASE_URL" value="http://localhost:3000/egovph/face-liveness" force="true"/>
+        <env name="EGOV_CHAIN_BASE_URL" value="http://localhost:3000/egovph/egovchain" force="true"/>
+        <env name="EGOV_REPORT_BASE_URL" value="http://localhost:3000/egovph/ereport" force="true"/>
+        <env name="EGOV_COMPASS_BASE_URL" value="http://localhost:3000/egovph/compass" force="true"/>
+        <env name="EGOV_ENABLE_LIVE_MUTATIONS" value="false" force="true"/>
     </php>
 </phpunit>

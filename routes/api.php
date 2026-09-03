@@ -38,6 +38,10 @@ Route::post('/v1/egov/integration/tourism/generate', [EGovIntegrationController:
 Route::post('/v1/egov/integration/laws_and_regulations/generate', [EGovIntegrationController::class, 'lawsAndRegulations']);
 Route::post('/v1/egov/integration/translator/generate', [EGovIntegrationController::class, 'translator']);
 Route::post('/v1/egov/integration/document_extractor/generate', [EGovIntegrationController::class, 'documentExtractor']);
+Route::get('/v1/egov/integration/credits', [EGovIntegrationController::class, 'aiCredits']);
+
+// 5. eMessage SMS Push -> /messaging/v1/sms/push
+Route::post('/messaging/v1/sms/push', [EGovIntegrationController::class, 'pushSms']);
 
 
 /*
@@ -70,9 +74,30 @@ Route::prefix('v1')->group(function () {
 
     // eGovPay, eMessage, eReport, Compass
     Route::post('/pay/settle', [EGovIntegrationController::class, 'paySettle']);
+    Route::post('/pay/transaction', [EGovIntegrationController::class, 'payCreateTransaction']);
+    Route::get('/pay/transaction/{uuid}', [EGovIntegrationController::class, 'payGetTransaction']);
+    Route::put('/pay/transaction/{uuid}/void', [EGovIntegrationController::class, 'payVoidTransaction']);
     Route::post('/emessage/send', [EGovIntegrationController::class, 'sendMessage']);
     Route::post('/ereport/submit', [EGovIntegrationController::class, 'submitReport']);
+    Route::post('/v1/ereport/token', [EGovIntegrationController::class, 'ereportToken']);
+    Route::get('/v1/ereport/datasets/report_types', [EGovIntegrationController::class, 'ereportReportTypes']);
+    Route::get('/v1/ereport/datasets/regions', [EGovIntegrationController::class, 'ereportRegions']);
+    Route::get('/v1/ereport/datasets/provinces', [EGovIntegrationController::class, 'ereportProvinces']);
+    Route::get('/v1/ereport/datasets/municipalities', [EGovIntegrationController::class, 'ereportMunicipalities']);
+    Route::get('/v1/ereport/datasets/barangays', [EGovIntegrationController::class, 'ereportBarangays']);
+    Route::post('/v1/ereport/submit_complaint', [EGovIntegrationController::class, 'ereportSubmitComplaint']);
+    Route::post('/v1/ereport/verify/request', [EGovIntegrationController::class, 'ereportVerifyRequest']);
+    Route::post('/v1/ereport/verify/confirm', [EGovIntegrationController::class, 'ereportVerifyConfirm']);
+    Route::get('/v1/ereport/reports', [EGovIntegrationController::class, 'ereportReports']);
+    Route::get('/v1/ereport/reports/{case_number}', [EGovIntegrationController::class, 'ereportViewReport']);
     Route::get('/compass/budget', [EGovIntegrationController::class, 'compassBudget']);
+    Route::get('/v1/records/saaodb', [EGovIntegrationController::class, 'compassSaaodb']);
+    Route::get('/v1/records/saaodb/dashboard', [EGovIntegrationController::class, 'compassSaaodbDashboard']);
+    Route::get('/v1/records/saaodb/entities', [EGovIntegrationController::class, 'compassSaaodbEntities']);
+    Route::get('/v1/records/nca', [EGovIntegrationController::class, 'compassNca']);
+    Route::get('/v1/records/saro', [EGovIntegrationController::class, 'compassSaro']);
+    Route::get('/v1/records/lgsf', [EGovIntegrationController::class, 'compassLgsf']);
+    Route::get('/v1/records/lgsf/dashboard', [EGovIntegrationController::class, 'compassLgsfDashboard']);
 
     // Applicant Cases & Selection
     Route::get('/cases', [ApplicantCaseController::class, 'index']);
