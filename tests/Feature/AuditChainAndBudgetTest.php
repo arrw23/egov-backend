@@ -87,6 +87,7 @@ class AuditChainAndBudgetTest extends TestCase
     public function test_timeline_verify_endpoint_reports_a_broken_chain(): void
     {
         $this->seed(\Database\Seeders\DatabaseSeeder::class);
+        $this->actingAsRole('applicant');
 
         $case = MedicalCase::firstOrFail();
         $actor = User::firstOrFail();
@@ -164,6 +165,7 @@ class AuditChainAndBudgetTest extends TestCase
     public function test_identity_verification_stores_the_returned_philsys_id(): void
     {
         $this->seed(\Database\Seeders\DatabaseSeeder::class);
+        $this->actingAsRole('applicant');
 
         $applicant = User::where('egov_sub', 'MVPCBEUVCGPZR')->firstOrFail();
 
@@ -193,6 +195,7 @@ class AuditChainAndBudgetTest extends TestCase
     public function test_identity_verification_requires_consent(): void
     {
         $this->seed(\Database\Seeders\DatabaseSeeder::class);
+        $this->actingAsRole('applicant');
 
         $this->postJson('/api/v1/identity/verify', ['consent' => false])
             ->assertStatus(422);

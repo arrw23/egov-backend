@@ -27,6 +27,7 @@ class SeededApplicantTest extends TestCase
     public function test_cases_endpoint_returns_the_seeded_case_for_the_default_applicant(): void
     {
         $this->seed(DatabaseSeeder::class);
+        $this->actingAsRole('applicant');
 
         $response = $this->getJson('/api/v1/cases');
 

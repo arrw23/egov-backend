@@ -13,6 +13,9 @@ class EGovIntegrationsTest extends TestCase
     {
         parent::setUp();
         $this->seed();
+
+        // The eGov catalog proxies now require an authenticated caller.
+        $this->actingAsRole('applicant');
     }
 
     public function test_egov_sso_token_exchange_and_profile_fetching(): void

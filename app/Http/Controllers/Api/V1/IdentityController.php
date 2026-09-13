@@ -18,7 +18,7 @@ class IdentityController extends Controller
             'consent' => 'required|boolean',
         ]);
 
-        $user = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('applicant');
+        $user = Auth::user();
 
         return response()->json([
             'status' => 'success',
@@ -38,7 +38,7 @@ class IdentityController extends Controller
             'birth_date' => 'nullable|date',
         ]);
 
-        $user = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('applicant');
+        $user = Auth::user();
 
         if (! $request->boolean('consent')) {
             return response()->json([

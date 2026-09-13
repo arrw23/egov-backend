@@ -75,6 +75,7 @@ class VerifiedFiveHundredsTest extends TestCase
     public function test_hospital_request_detail_returns_the_bound_model(): void
     {
         $this->seedDemo();
+        $this->actingAsRole('hospital_staff');
 
         $docReq = HospitalDocumentRequest::firstOrFail();
 
@@ -93,6 +94,7 @@ class VerifiedFiveHundredsTest extends TestCase
     public function test_hospital_request_detail_404s_for_an_unknown_id(): void
     {
         $this->seedDemo();
+        $this->actingAsRole('hospital_staff');
 
         $this->getJson('/api/v1/hospital/requests/999999')->assertStatus(404);
     }

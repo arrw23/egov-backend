@@ -27,6 +27,10 @@ class HospitalAndAgencyFixesTest extends TestCase
     {
         parent::setUp();
         $this->seed(DatabaseSeeder::class);
+
+        // Routes are behind auth:sanctum + role middleware now. Most tests here
+        // exercise the hospital portal; agency tests switch role explicitly.
+        $this->actingAsRole('hospital_staff');
     }
 
     private function mgh(): Organization
@@ -255,6 +259,7 @@ class HospitalAndAgencyFixesTest extends TestCase
 
     public function test_repeat_approve_returns_the_same_gl_number_and_creates_only_one_letter(): void
     {
+        $this->actingAsRole('agency_evaluator');
         $application = AgencyApplication::whereHas(
             'medicalCase',
             fn ($q) => $q->where('case_number', 'MGL-2026-001304')
@@ -314,6 +319,7 @@ class HospitalAndAgencyFixesTest extends TestCase
 
     public function test_approving_an_application_in_a_non_approvable_status_returns_409(): void
     {
+        $this->actingAsRole('agency_evaluator');
         $case = MedicalCase::where('case_number', 'MGL-2026-001303')->firstOrFail();
 
         $application = AgencyApplication::create([
@@ -339,6 +345,7 @@ class HospitalAndAgencyFixesTest extends TestCase
 
     public function test_approving_when_the_case_cannot_reach_approval_returns_409(): void
     {
+        $this->actingAsRole('agency_evaluator');
         $provider = $this->mgh();
         $applicant = User::where('egov_sub', 'egov-sub-applicant-carlos-106')->firstOrFail();
 
@@ -376,6 +383,7 @@ class HospitalAndAgencyFixesTest extends TestCase
 
     public function test_approved_amount_above_the_requested_or_uncovered_amount_returns_422(): void
     {
+        $this->actingAsRole('agency_evaluator');
         $application = AgencyApplication::whereHas(
             'medicalCase',
             fn ($q) => $q->where('case_number', 'MGL-2026-001303')
@@ -435,6 +443,7 @@ class HospitalAndAgencyFixesTest extends TestCase
      */
     public function test_default_applicant_still_leads_the_cases_endpoint(): void
     {
+        $this->actingAsRole('applicant');
         $response = $this->getJson('/api/v1/cases');
         $response->assertStatus(200);
 

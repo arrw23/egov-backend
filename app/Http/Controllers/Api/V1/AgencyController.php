@@ -116,7 +116,7 @@ class AgencyController extends Controller
             'remarks' => 'nullable|string',
         ]);
 
-        $evaluator = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('agency');
+        $evaluator = Auth::user();
         $action = $request->input('action');
         $reason = $request->input('reason');
         $remarks = $request->input('remarks', '');

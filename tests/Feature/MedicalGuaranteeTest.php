@@ -24,6 +24,8 @@ class MedicalGuaranteeTest extends TestCase
 
     public function test_mock_auth_and_profile_fetching(): void
     {
+        $this->actingAsRole('applicant');
+
         $response = $this->getJson('/api/v1/me');
         $response->assertStatus(200)
             ->assertJsonPath('status', 'success')
@@ -32,6 +34,8 @@ class MedicalGuaranteeTest extends TestCase
 
     public function test_philsys_identity_verification(): void
     {
+        $this->actingAsRole('applicant');
+
         $response = $this->postJson('/api/v1/identity/verify', [
             'consent' => true,
         ]);
@@ -53,6 +57,10 @@ class MedicalGuaranteeTest extends TestCase
         $this->assertNotNull($gl);
         $this->assertEquals(50000.00, (float) $gl->approved_amount);
 
+        // The journey now runs as the hospital, which is the party that
+        // validates and settles a guarantee letter.
+        $this->actingAsRole('hospital_staff');
+
         // 3. Hospital validates guarantee letter via QR / GL Number
         $valRes = $this->postJson('/api/v1/guarantees/validate', [
             'gl_number' => 'GL-DSWD-2026-04821',
@@ -73,7 +81,9 @@ class MedicalGuaranteeTest extends TestCase
             ->assertJsonPath('status', 'success')
             ->assertJsonPath('guarantee_status', 'fully_utilized');
 
-        // 5. Re-check calculations on MedicalCase
+        // 5. Re-check calculations on MedicalCase as the applicant
+        $this->actingAsRole('applicant');
+
         $caseRes = $this->getJson("/api/v1/cases/{$case->id}");
         $caseRes->assertStatus(200)
             ->assertJsonPath('case.financials.verified_bill', 150000)

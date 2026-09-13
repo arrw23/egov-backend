@@ -50,91 +50,132 @@ Route::post('/messaging/v1/sms/push', [EGovIntegrationController::class, 'pushSm
 |--------------------------------------------------------------------------
 */
 Route::prefix('v1')->group(function () {
-    // Public, non-secret configuration for the browser (SSO partner code,
-    // liveness public key + SDK URL). Deliberately unauthenticated: these
-    // values are already public and the login page needs them before sign-in.
+    /*
+    |----------------------------------------------------------------------
+    | Public (no authentication)
+    |----------------------------------------------------------------------
+    | Public, non-secret configuration plus the sign-in endpoints. The login
+    | page needs these before a user has a token.
+    */
     Route::get('/egov/public-config', [EGovIntegrationController::class, 'publicConfig']);
-
-    // Auth & Identity
     Route::get('/auth/egov/redirect', [AuthController::class, 'redirect']);
     Route::get('/auth/egov/callback', [AuthController::class, 'callback']);
     Route::post('/auth/egov/exchange', [AuthController::class, 'exchange']);
     Route::post('/auth/mock/login', [AuthController::class, 'mockLogin']);
-    Route::get('/me', [AuthController::class, 'me']);
-    Route::post('/logout', [AuthController::class, 'logout']);
 
-    Route::post('/identity/consents', [IdentityController::class, 'recordConsent']);
-    Route::post('/identity/verify', [IdentityController::class, 'verify']);
+    /*
+    |----------------------------------------------------------------------
+    | Authenticated (any role)
+    |----------------------------------------------------------------------
+    | Laravel's api group is stateless, so Auth::login() alone was forgotten
+    | on the next request and every controller fell back to a hard-coded
+    | user. Sanctum tokens make the caller real.
+    */
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::get('/me', [AuthController::class, 'me']);
+        Route::post('/logout', [AuthController::class, 'logout']);
 
-    // eGov Catalog Endpoints (v1 namespace proxies)
-    Route::post('/egov/sso/token', [EGovIntegrationController::class, 'ssoToken']);
-    Route::post('/egov/sso/profile', [EGovIntegrationController::class, 'ssoAuthentication']);
-    Route::post('/everify/auth', [EGovIntegrationController::class, 'eVerifyAuth']);
-    Route::post('/everify/query', [EGovIntegrationController::class, 'eVerifyQuery']);
-    Route::post('/everify/qr/check', [EGovIntegrationController::class, 'eVerifyQrCheck']);
-    Route::post('/everify/qr/verify', [EGovIntegrationController::class, 'eVerifyQrVerify']);
+        Route::post('/identity/consents', [IdentityController::class, 'recordConsent']);
+        Route::post('/identity/verify', [IdentityController::class, 'verify']);
 
-    // eGovChain Hyperledger Besu Blockchain JSON-RPC
-    Route::post('/egovchain/rpc', [EGovIntegrationController::class, 'besuJsonRpc']);
-    Route::post('/egovchain/anchor', [EGovIntegrationController::class, 'anchorRecord']);
+        // Reference data used by the application wizard.
+        Route::get('/providers', [ApplicantCaseController::class, 'providers']);
+        Route::get('/agency-programs', [ApplicantCaseController::class, 'agencyPrograms']);
 
-    // eGovPay, eMessage, eReport, Compass
-    Route::post('/pay/settle', [EGovIntegrationController::class, 'paySettle']);
-    Route::post('/pay/transaction', [EGovIntegrationController::class, 'payCreateTransaction']);
-    Route::get('/pay/transaction/{uuid}', [EGovIntegrationController::class, 'payGetTransaction']);
-    Route::put('/pay/transaction/{uuid}/void', [EGovIntegrationController::class, 'payVoidTransaction']);
-    Route::post('/emessage/send', [EGovIntegrationController::class, 'sendMessage']);
-    Route::post('/ereport/submit', [EGovIntegrationController::class, 'submitReport']);
-    Route::post('/v1/ereport/token', [EGovIntegrationController::class, 'ereportToken']);
-    Route::get('/v1/ereport/datasets/report_types', [EGovIntegrationController::class, 'ereportReportTypes']);
-    Route::get('/v1/ereport/datasets/regions', [EGovIntegrationController::class, 'ereportRegions']);
-    Route::get('/v1/ereport/datasets/provinces', [EGovIntegrationController::class, 'ereportProvinces']);
-    Route::get('/v1/ereport/datasets/municipalities', [EGovIntegrationController::class, 'ereportMunicipalities']);
-    Route::get('/v1/ereport/datasets/barangays', [EGovIntegrationController::class, 'ereportBarangays']);
-    Route::post('/v1/ereport/submit_complaint', [EGovIntegrationController::class, 'ereportSubmitComplaint']);
-    Route::post('/v1/ereport/verify/request', [EGovIntegrationController::class, 'ereportVerifyRequest']);
-    Route::post('/v1/ereport/verify/confirm', [EGovIntegrationController::class, 'ereportVerifyConfirm']);
-    Route::get('/v1/ereport/reports', [EGovIntegrationController::class, 'ereportReports']);
-    Route::get('/v1/ereport/reports/{case_number}', [EGovIntegrationController::class, 'ereportViewReport']);
-    Route::get('/compass/budget', [EGovIntegrationController::class, 'compassBudget']);
-    Route::get('/v1/records/saaodb', [EGovIntegrationController::class, 'compassSaaodb']);
-    Route::get('/v1/records/saaodb/dashboard', [EGovIntegrationController::class, 'compassSaaodbDashboard']);
-    Route::get('/v1/records/saaodb/entities', [EGovIntegrationController::class, 'compassSaaodbEntities']);
-    Route::get('/v1/records/nca', [EGovIntegrationController::class, 'compassNca']);
-    Route::get('/v1/records/saro', [EGovIntegrationController::class, 'compassSaro']);
-    Route::get('/v1/records/lgsf', [EGovIntegrationController::class, 'compassLgsf']);
-    Route::get('/v1/records/lgsf/dashboard', [EGovIntegrationController::class, 'compassLgsfDashboard']);
+        // Any party to a case may read its audit timeline, and any party may
+        // validate a guarantee letter presented to them.
+        Route::get('/cases/{case}/timeline', [ApplicantCaseController::class, 'timeline']);
+        Route::get('/cases/{case}/timeline/verify', [ApplicantCaseController::class, 'verifyTimeline']);
+        Route::post('/guarantees/validate', [HospitalController::class, 'validateGuarantee']);
+        Route::get('/guarantees/{guarantee}', [AgencyController::class, 'showGuarantee']);
 
-    // Applicant Cases & Selection
-    Route::get('/cases', [ApplicantCaseController::class, 'index']);
-    Route::post('/cases', [ApplicantCaseController::class, 'store']);
-    Route::get('/cases/{case}', [ApplicantCaseController::class, 'show']);
-    Route::post('/cases/{case}/documents', [ApplicantCaseController::class, 'uploadDocument']);
-    Route::post('/cases/{case}/hospital-request', [ApplicantCaseController::class, 'requestHospitalDocuments']);
-    Route::get('/providers', [ApplicantCaseController::class, 'providers']);
-    Route::get('/agency-programs', [ApplicantCaseController::class, 'agencyPrograms']);
-    Route::post('/cases/{case}/agency-applications', [ApplicantCaseController::class, 'submitAgencyApplication']);
-    Route::get('/cases/{case}/timeline', [ApplicantCaseController::class, 'timeline']);
-    Route::get('/cases/{case}/timeline/verify', [ApplicantCaseController::class, 'verifyTimeline']);
+        // Each role has its own notification feed.
+        Route::get('/notifications', [NotificationController::class, 'index']);
+        Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
 
-    // Hospital Portal
-    Route::get('/hospital/requests', [HospitalController::class, 'pendingRequests']);
-    Route::get('/hospital/requests/{docReq}', [HospitalController::class, 'showRequest']);
-    Route::post('/hospital/requests/{docReq}/documents', [HospitalController::class, 'submitDocuments']);
-    Route::post('/hospital/cases/{case}/documents', [HospitalController::class, 'uploadHospitalDocument']);
-    Route::post('/documents/{document}/certify', [HospitalController::class, 'certifyDocument']);
-    Route::get('/documents/{document}/verify-blockchain', [HospitalController::class, 'verifyDocumentBlockchain']);
-    Route::post('/guarantees/validate', [HospitalController::class, 'validateGuarantee']);
-    Route::post('/guarantees/{guarantee}/utilizations', [HospitalController::class, 'recordUtilization']);
+        /*
+        |------------------------------------------------------------------
+        | eGov catalog proxies
+        |------------------------------------------------------------------
+        | Server-side shims that hold the credentials. Previously open to
+        | anyone, which let an anonymous caller spend eGov AI credits and
+        | push real SMS.
+        */
+        Route::post('/egov/sso/token', [EGovIntegrationController::class, 'ssoToken']);
+        Route::post('/egov/sso/profile', [EGovIntegrationController::class, 'ssoAuthentication']);
+        Route::post('/everify/auth', [EGovIntegrationController::class, 'eVerifyAuth']);
+        Route::post('/everify/query', [EGovIntegrationController::class, 'eVerifyQuery']);
+        Route::post('/everify/qr/check', [EGovIntegrationController::class, 'eVerifyQrCheck']);
+        Route::post('/everify/qr/verify', [EGovIntegrationController::class, 'eVerifyQrVerify']);
 
-    // Agency Portal
-    Route::get('/agency/applications', [AgencyController::class, 'index']);
-    Route::get('/agency/applications/{application}', [AgencyController::class, 'show']);
-    Route::post('/agency/applications/{application}/summary', [AgencyController::class, 'generateSummary']);
-    Route::post('/agency/applications/{application}/decision', [AgencyController::class, 'decision']);
-    Route::get('/guarantees/{guarantee}', [AgencyController::class, 'showGuarantee']);
+        Route::post('/egovchain/rpc', [EGovIntegrationController::class, 'besuJsonRpc']);
+        Route::post('/egovchain/anchor', [EGovIntegrationController::class, 'anchorRecord']);
 
-    // Notifications
-    Route::get('/notifications', [NotificationController::class, 'index']);
-    Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markAsRead']);
+        Route::post('/pay/settle', [EGovIntegrationController::class, 'paySettle']);
+        Route::post('/pay/transaction', [EGovIntegrationController::class, 'payCreateTransaction']);
+        Route::get('/pay/transaction/{uuid}', [EGovIntegrationController::class, 'payGetTransaction']);
+        Route::put('/pay/transaction/{uuid}/void', [EGovIntegrationController::class, 'payVoidTransaction']);
+        Route::post('/emessage/send', [EGovIntegrationController::class, 'sendMessage']);
+        Route::post('/ereport/submit', [EGovIntegrationController::class, 'submitReport']);
+        Route::post('/v1/ereport/token', [EGovIntegrationController::class, 'ereportToken']);
+        Route::get('/v1/ereport/datasets/report_types', [EGovIntegrationController::class, 'ereportReportTypes']);
+        Route::get('/v1/ereport/datasets/regions', [EGovIntegrationController::class, 'ereportRegions']);
+        Route::get('/v1/ereport/datasets/provinces', [EGovIntegrationController::class, 'ereportProvinces']);
+        Route::get('/v1/ereport/datasets/municipalities', [EGovIntegrationController::class, 'ereportMunicipalities']);
+        Route::get('/v1/ereport/datasets/barangays', [EGovIntegrationController::class, 'ereportBarangays']);
+        Route::post('/v1/ereport/submit_complaint', [EGovIntegrationController::class, 'ereportSubmitComplaint']);
+        Route::post('/v1/ereport/verify/request', [EGovIntegrationController::class, 'ereportVerifyRequest']);
+        Route::post('/v1/ereport/verify/confirm', [EGovIntegrationController::class, 'ereportVerifyConfirm']);
+        Route::get('/v1/ereport/reports', [EGovIntegrationController::class, 'ereportReports']);
+        Route::get('/v1/ereport/reports/{case_number}', [EGovIntegrationController::class, 'ereportViewReport']);
+        Route::get('/compass/budget', [EGovIntegrationController::class, 'compassBudget']);
+        Route::get('/v1/records/saaodb', [EGovIntegrationController::class, 'compassSaaodb']);
+        Route::get('/v1/records/saaodb/dashboard', [EGovIntegrationController::class, 'compassSaaodbDashboard']);
+        Route::get('/v1/records/saaodb/entities', [EGovIntegrationController::class, 'compassSaaodbEntities']);
+        Route::get('/v1/records/nca', [EGovIntegrationController::class, 'compassNca']);
+        Route::get('/v1/records/saro', [EGovIntegrationController::class, 'compassSaro']);
+        Route::get('/v1/records/lgsf', [EGovIntegrationController::class, 'compassLgsf']);
+        Route::get('/v1/records/lgsf/dashboard', [EGovIntegrationController::class, 'compassLgsfDashboard']);
+
+        /*
+        |------------------------------------------------------------------
+        | Applicant portal
+        |------------------------------------------------------------------
+        */
+        Route::middleware('role:applicant')->group(function () {
+            Route::get('/cases', [ApplicantCaseController::class, 'index']);
+            Route::post('/cases', [ApplicantCaseController::class, 'store']);
+            Route::get('/cases/{case}', [ApplicantCaseController::class, 'show']);
+            Route::post('/cases/{case}/documents', [ApplicantCaseController::class, 'uploadDocument']);
+            Route::post('/cases/{case}/hospital-request', [ApplicantCaseController::class, 'requestHospitalDocuments']);
+            Route::post('/cases/{case}/agency-applications', [ApplicantCaseController::class, 'submitAgencyApplication']);
+        });
+
+        /*
+        |------------------------------------------------------------------
+        | Hospital portal
+        |------------------------------------------------------------------
+        */
+        Route::middleware('role:hospital_staff')->group(function () {
+            Route::get('/hospital/requests', [HospitalController::class, 'pendingRequests']);
+            Route::get('/hospital/requests/{docReq}', [HospitalController::class, 'showRequest']);
+            Route::post('/hospital/requests/{docReq}/documents', [HospitalController::class, 'submitDocuments']);
+            Route::post('/hospital/cases/{case}/documents', [HospitalController::class, 'uploadHospitalDocument']);
+            Route::post('/documents/{document}/certify', [HospitalController::class, 'certifyDocument']);
+            Route::get('/documents/{document}/verify-blockchain', [HospitalController::class, 'verifyDocumentBlockchain']);
+            Route::post('/guarantees/{guarantee}/utilizations', [HospitalController::class, 'recordUtilization']);
+        });
+
+        /*
+        |------------------------------------------------------------------
+        | Agency portal
+        |------------------------------------------------------------------
+        */
+        Route::middleware('role:agency_evaluator')->group(function () {
+            Route::get('/agency/applications', [AgencyController::class, 'index']);
+            Route::get('/agency/applications/{application}', [AgencyController::class, 'show']);
+            Route::post('/agency/applications/{application}/summary', [AgencyController::class, 'generateSummary']);
+            Route::post('/agency/applications/{application}/decision', [AgencyController::class, 'decision']);
+        });
+    });
 });

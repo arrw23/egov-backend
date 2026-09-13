@@ -25,7 +25,7 @@ class HospitalController extends Controller
 {
     public function pendingRequests(): JsonResponse
     {
-        $staff = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('hospital');
+        $staff = Auth::user();
 
         // B4: the queue is hospital-scoped. Previously every staff member saw
         // every hospital's document requests.
@@ -76,7 +76,7 @@ class HospitalController extends Controller
     public function submitDocuments(Request $request, HospitalDocumentRequest $docReq, EGovAIService $aiService, EGovChainService $chain, CaseStateMachineService $stateMachine): JsonResponse
     {
         $case = $docReq->medicalCase;
-        $staff = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('hospital');
+        $staff = Auth::user();
 
         $certifiedDocs = [];
         $missing = [];
@@ -231,7 +231,7 @@ class HospitalController extends Controller
 
     public function certifyDocument(CaseDocument $document, EGovChainService $chain): JsonResponse
     {
-        $staff = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('hospital');
+        $staff = Auth::user();
 
         $document->status = 'certified';
         $document->verified_by_user_id = $staff->id;
@@ -268,7 +268,7 @@ class HospitalController extends Controller
             'doc_request_id' => 'nullable|integer',
         ]);
 
-        $staff = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('hospital');
+        $staff = Auth::user();
         $docType = $request->input('document_type');
         $title = $request->input('title');
 
@@ -451,7 +451,7 @@ class HospitalController extends Controller
         $utilizedAmount = (float) $request->input('utilized_amount');
         $billingRef = $request->input('billing_reference');
 
-        $staff = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('hospital');
+        $staff = Auth::user();
 
         // B5: one transaction, and the GL row is locked so two concurrent
         // requests cannot both settle against the same remaining balance.

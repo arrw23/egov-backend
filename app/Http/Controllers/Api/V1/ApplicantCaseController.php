@@ -11,6 +11,7 @@ use App\Models\CaseDocument;
 use App\Models\HospitalDocumentRequest;
 use App\Models\MedicalCase;
 use App\Models\Organization;
+use App\Models\User;
 use App\Services\EGov\EGovAIService;
 use App\Services\EGov\EGovChainService;
 use App\Services\EGov\EMessageService;
@@ -25,7 +26,7 @@ class ApplicantCaseController extends Controller
 {
     public function index(): JsonResponse
     {
-        $user = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('applicant');
+        $user = Auth::user();
 
         $cases = MedicalCase::with(['provider', 'documents', 'hospitalRequests', 'agencyApplications.agencyProgram.agency', 'guaranteeLetters'])
             ->where('applicant_id', $user->id)
@@ -69,7 +70,7 @@ class ApplicantCaseController extends Controller
             'treatment_date' => 'nullable|date',
         ]);
 
-        $user = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('applicant');
+        $user = Auth::user();
 
         $case = MedicalCase::create([
             // Placeholder; replaced below with a deterministic number derived
@@ -120,8 +121,57 @@ class ApplicantCaseController extends Controller
         ]);
     }
 
+    /**
+     * Guards access to a single case.
+     *
+     * Applicants see only their own cases; hospital staff only cases at their
+     * own organization; agency evaluators only cases that have an application
+     * with their agency. Without this, any authenticated caller could read any
+     * case simply by changing the id in the URL.
+     */
+    private function authorizeCaseAccess(MedicalCase $case, ?User $user): void
+    {
+        if (! $user) {
+            abort(401, 'Unauthenticated.');
+        }
+
+        if ($user->role === 'applicant') {
+            if ((int) $case->applicant_id !== (int) $user->id) {
+                abort(403, 'You do not have access to this case.');
+            }
+
+            return;
+        }
+
+        if ($user->role === 'hospital_staff') {
+            if ($user->organization_id && (int) $case->provider_id === (int) $user->organization_id) {
+                return;
+            }
+
+            abort(403, 'This case belongs to a different hospital.');
+        }
+
+        if ($user->role === 'agency_evaluator') {
+            $belongs = $case->agencyApplications()
+                ->whereHas('agencyProgram', function ($q) use ($user) {
+                    $q->where('agency_id', $user->organization_id);
+                })
+                ->exists();
+
+            if ($belongs) {
+                return;
+            }
+
+            abort(403, 'This case was not submitted to your agency.');
+        }
+
+        abort(403, 'You do not have access to this case.');
+    }
+
     public function show(MedicalCase $case, CaseCalculationService $calcService, EGovAIService $aiService): JsonResponse
     {
+        $this->authorizeCaseAccess($case, Auth::user());
+
         $case->load([
             'provider',
             'documents',
@@ -159,6 +209,7 @@ class ApplicantCaseController extends Controller
 
     public function uploadDocument(Request $request, MedicalCase $case, EGovAIService $aiService, EGovChainService $chain): JsonResponse
     {
+        $this->authorizeCaseAccess($case, Auth::user());
         $request->validate([
             'document_type' => 'required|string',
             'title' => 'required|string',
@@ -205,7 +256,7 @@ class ApplicantCaseController extends Controller
             'extracted_json' => $extractedInfo,
         ]);
 
-        $user = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('applicant');
+        $user = Auth::user();
         $chain->recordEvent(
             $case,
             $user,
@@ -233,6 +284,7 @@ class ApplicantCaseController extends Controller
 
     public function requestHospitalDocuments(Request $request, MedicalCase $case, CaseStateMachineService $stateMachine, EMessageService $eMessage, EGovChainService $chain): JsonResponse
     {
+        $this->authorizeCaseAccess($case, Auth::user());
         $hospitalReq = HospitalDocumentRequest::create([
             'medical_case_id' => $case->id,
             'hospital_id' => $case->provider_id,
@@ -245,21 +297,27 @@ class ApplicantCaseController extends Controller
             $stateMachine->transition($case, CaseStateMachineService::WAITING_FOR_HOSPITAL_DOCUMENTS);
         }
 
-        $user = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('applicant');
+        $user = Auth::user();
 
-        // Notify Hospital Staff
-        $hospitalStaff = (new MockEGovIdentityProvider())->resolveUser('hospital');
-        try {
-            $eMessage->send(
-                $hospitalStaff,
-                'New Hospital Record Request',
-                "Applicant {$user->name} requested certified records for case {$case->case_number}.",
-                'info',
-                'MedicalCase',
-                $case->id
-            );
-        } catch (\Exception $e) {
-            // Ignore error
+        // Notify the hospital staff who actually work at the case's provider,
+        // rather than whichever hospital account happened to be resolved.
+        $hospitalStaff = User::where('role', 'hospital_staff')
+            ->where('organization_id', $case->provider_id)
+            ->first();
+
+        if ($hospitalStaff) {
+            try {
+                $eMessage->send(
+                    $hospitalStaff,
+                    'New Hospital Record Request',
+                    "Applicant {$user->name} requested certified records for case {$case->case_number}.",
+                    'info',
+                    'MedicalCase',
+                    $case->id
+                );
+            } catch (\Exception $e) {
+                // Ignore error
+            }
         }
 
         $chain->recordEvent(
@@ -297,6 +355,7 @@ class ApplicantCaseController extends Controller
 
     public function submitAgencyApplication(Request $request, MedicalCase $case, CaseStateMachineService $stateMachine, EMessageService $eMessage, EGovChainService $chain): JsonResponse
     {
+        $this->authorizeCaseAccess($case, Auth::user());
         $request->validate([
             'agency_program_id' => 'required|exists:agency_programs,id',
             'requested_amount' => 'required|numeric|min:1',
@@ -316,20 +375,29 @@ class ApplicantCaseController extends Controller
             $stateMachine->transition($case, CaseStateMachineService::UNDER_AGENCY_REVIEW);
         }
 
-        $user = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('applicant');
-        $evaluator = (new MockEGovIdentityProvider())->resolveUser('agency');
+        $user = Auth::user();
 
-        try {
-            $eMessage->send(
-                $evaluator,
-                'New Assistance Application Received',
-                "New medical assistance request {$case->case_number} submitted for review.",
-                'info',
-                'AgencyApplication',
-                $app->id
-            );
-        } catch (\Exception $e) {
-            // Ignore error
+        // Notify an evaluator at the agency that owns the target program.
+        $evaluator = User::where('role', 'agency_evaluator')
+            ->when(
+                $app->agencyProgram?->agency_id,
+                fn ($q, $agencyId) => $q->where('organization_id', $agencyId)
+            )
+            ->first();
+
+        if ($evaluator) {
+            try {
+                $eMessage->send(
+                    $evaluator,
+                    'New Assistance Application Received',
+                    "New medical assistance request {$case->case_number} submitted for review.",
+                    'info',
+                    'AgencyApplication',
+                    $app->id
+                );
+            } catch (\Exception $e) {
+                // Ignore error
+            }
         }
 
         $chain->recordEvent(
@@ -349,6 +417,7 @@ class ApplicantCaseController extends Controller
 
     public function timeline(MedicalCase $case): JsonResponse
     {
+        $this->authorizeCaseAccess($case, Auth::user());
         $events = $case->auditEvents()->orderBy('created_at', 'asc')->get();
         return response()->json([
             'status' => 'success',
@@ -362,6 +431,7 @@ class ApplicantCaseController extends Controller
      */
     public function verifyTimeline(MedicalCase $case, EGovChainService $chain): JsonResponse
     {
+        $this->authorizeCaseAccess($case, Auth::user());
         $result = $chain->verifyTimeline($case);
 
         return response()->json([

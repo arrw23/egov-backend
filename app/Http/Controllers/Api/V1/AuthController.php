@@ -130,6 +130,7 @@ class AuthController extends Controller
 
         return response()->json([
             'status' => 'success',
+            'token' => $user->createToken('web')->plainTextToken,
             'user' => $this->userPayload($user),
             'profile' => $data,
         ]);
@@ -144,6 +145,7 @@ class AuthController extends Controller
 
         return response()->json([
             'status' => 'success',
+            'token' => $user->createToken('web')->plainTextToken,
             'user' => $this->userPayload($user),
             'badge' => 'Authenticated through simulated eGovPH SSO',
         ]);
@@ -151,12 +153,10 @@ class AuthController extends Controller
 
     public function me(Request $request): JsonResponse
     {
-        $user = Auth::user();
-        if (!$user) {
-            // Default fallback to applicant if session uninitialized for demo
-            $provider = new MockEGovIdentityProvider();
-            $user = $provider->resolveUser('applicant');
-            Auth::login($user);
+        $user = $request->user();
+
+        if (! $user) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
         return response()->json([
@@ -167,8 +167,14 @@ class AuthController extends Controller
         ]);
     }
 
-    public function logout(): JsonResponse
+    public function logout(Request $request): JsonResponse
     {
+        // Revoke the token that authenticated this request.
+        $token = $request->user()?->currentAccessToken();
+        if ($token && method_exists($token, 'delete')) {
+            $token->delete();
+        }
+
         Auth::logout();
 
         return response()->json([
