@@ -264,7 +264,10 @@ class HospitalController extends Controller
         $request->validate([
             'document_type' => 'required|string',
             'title' => 'required|string',
-            'file' => 'nullable|file|max:10240',
+            // Same rule as the applicant upload: a document with no file has no
+            // integrity guarantee, so a missing file is refused rather than
+            // hashed from a timestamp string with a random file size.
+            'file' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240',
             'doc_request_id' => 'nullable|integer',
         ]);
 
@@ -272,32 +275,26 @@ class HospitalController extends Controller
         $docType = $request->input('document_type');
         $title = $request->input('title');
 
-        if ($request->hasFile('file') && $request->file('file')->isValid()) {
-            $file = $request->file('file');
-            $fileName = time() . '_hsp_' . Str::slug($title) . '.' . $file->getClientOriginalExtension();
-            $storagePath = $file->storeAs("hospital/cases/{$case->id}", $fileName, 'public');
-            $fileSize = $file->getSize();
-            $fullSha256 = hash_file('sha256', $file->getRealPath());
-            $hash = 'DOC-HASH-' . strtoupper(substr($fullSha256, 0, 16));
-        } else {
-            $content = "HOSPITAL_CERTIFIED_" . time() . '_' . $docType . '_' . $title;
-            $storagePath = "hospital/cases/{$case->id}/{$docType}.pdf";
-            $fileSize = 2048 * rand(100, 500);
-            $fullSha256 = hash('sha256', $content);
-            $hash = $chain->generateDocumentHash($content);
-        }
+        $file = $request->file('file');
+        $fileName = time() . '_hsp_' . Str::slug($title) . '.' . $file->getClientOriginalExtension();
+        $storagePath = $file->storeAs("hospital/cases/{$case->id}", $fileName, 'public');
+        $fileSize = $file->getSize();
+        $fullSha256 = hash_file('sha256', $file->getRealPath());
+        // Full SHA-256, not a 16-character prefix.
+        $hash = $chain->generateDocumentHash($fullSha256);
 
-        $aiData = $aiService->classifyAndExtract($title, $docType);
+        $aiData = $aiService->classifyAndExtract($title, $docType, $file);
 
-        // Anchor certification onto Hyperledger Besu Zero-Fee eGovChain
+        // Anchor the certification and record what actually happened.
         $besuRes = $chain->anchorRecordOnBesu('HSP-DOC-' . $case->id . '-' . time(), $fullSha256, 'HOSPITAL_DOCUMENT_CERTIFICATION');
-        $txHash = $besuRes['result']['transactionHash'] ?? ('0x' . hash('sha256', $hash));
-        $blockNumber = $besuRes['result']['blockNumber'] ?? '0x1c37b1';
+        $txHash = $besuRes['result']['transactionHash'] ?? null;
+        $blockNumber = $besuRes['result']['blockNumber'] ?? null;
 
         $extractedInfo = array_merge($aiData, [
             'blockchain_tx_hash' => $txHash,
             'blockchain_block_number' => $blockNumber,
-            'blockchain_consensus' => 'IBFT 2.0 Proof of Authority (Government Nodes)',
+            'chain_anchored' => (bool) ($besuRes['anchored'] ?? false),
+            'ledger_simulated' => (bool) ($besuRes['simulated'] ?? false),
             'full_sha256' => $fullSha256,
             'certified_by' => $staff->name,
             'anchored_at' => now()->toIso8601String(),
@@ -328,19 +325,24 @@ class HospitalController extends Controller
             $stateMachine->transition($case, CaseStateMachineService::READY_FOR_SUBMISSION);
         }
 
+        $anchored = (bool) ($besuRes['anchored'] ?? false);
+        $ledgerNote = $anchored
+            ? 'Anchored on eGovChain'
+            : ($chain->isSimulated() ? 'Simulated ledger (not submitted to a chain)' : 'Ledger anchor not confirmed');
+
         $chain->recordEvent(
             $case,
             $staff,
             'DOCUMENTS_CERTIFIED',
-            "Hospital staff {$staff->name} uploaded & certified {$title} (Anchored to eGovChain)",
-            ['document_id' => $doc->id, 'besu_tx_hash' => $txHash]
+            "Hospital staff {$staff->name} uploaded & certified {$title} ({$ledgerNote})",
+            ['document_id' => $doc->id, 'blockchain_tx_hash' => $txHash, 'chain_anchored' => $anchored]
         );
 
         try {
             app(EMessageService::class)->send(
                 $case->applicant,
                 'Official Record Certified',
-                "{$staff->name} certified official record '{$title}'. Verified on eGovChain.",
+                "{$staff->name} certified official record '{$title}'. SHA-256 recorded and logged.",
                 'success',
                 'CaseDocument',
                 $doc->id
@@ -349,7 +351,11 @@ class HospitalController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Hospital document uploaded, certified, and anchored to eGovChain blockchain.',
+            'message' => $anchored
+                ? 'Hospital document uploaded, certified and anchored to eGovChain.'
+                : 'Hospital document uploaded and certified. Ledger anchoring is simulated (no chain configured).',
+            'chain_anchored' => $anchored,
+            'ledger_simulated' => (bool) ($besuRes['simulated'] ?? false),
             'document' => $doc,
         ]);
     }
