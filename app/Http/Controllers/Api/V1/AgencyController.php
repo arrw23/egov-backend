@@ -39,15 +39,18 @@ class AgencyController extends Controller
 
         $applications = $query->get();
         $calcService = new CaseCalculationService();
+        $aiService = new EGovAIService();
 
-        $mapped = $applications->map(function (AgencyApplication $app) use ($calcService) {
+        $mapped = $applications->map(function (AgencyApplication $app) use ($calcService, $aiService) {
             $financials = $calcService->calculate($app->medicalCase);
+
             return [
                 'id' => $app->id,
                 'medical_case_id' => $app->medical_case_id,
                 'case_number' => $app->medicalCase->case_number,
                 'patient_name' => $app->medicalCase->patient_name,
                 'applicant_name' => $app->medicalCase->applicant->name,
+                'relationship' => $app->medicalCase->relationship,
                 'hospital_name' => $app->medicalCase->provider->name ?? 'Hospital Provider',
                 'program_name' => $app->agencyProgram->name ?? 'AICS Assistance',
                 'requested_amount' => (float) $app->requested_amount,
@@ -55,7 +58,21 @@ class AgencyController extends Controller
                 'verified_bill' => (float) $app->medicalCase->verified_bill,
                 'status' => $app->status,
                 'financials' => $financials,
+                // C6: the inbox needs a per-document requirement rollup and a
+                // completeness score, computed from one shared
+                // REQUIRED_DOCUMENTS constant rather than invented by the UI.
+                'requirements' => $aiService->requirementStatuses($app->medicalCase),
+                'completeness' => $aiService->completenessScore($app->medicalCase),
+                'documents' => $app->medicalCase->documents->map(fn ($doc) => [
+                    'id' => $doc->id,
+                    'document_type' => $doc->document_type,
+                    'title' => $doc->title,
+                    'status' => $doc->status,
+                ])->values(),
                 'created_at' => $app->created_at->toIso8601String(),
+                // No decision timestamp column exists yet; surface the update
+                // time so the UI can stop guessing.
+                'decided_at' => $app->updated_at?->toIso8601String(),
             ];
         });
 
