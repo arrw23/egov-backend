@@ -18,7 +18,11 @@ class EGovSSOService
         $this->baseUrl = config('services.egov.sso.base_url', 'http://localhost:3000/egovph/sso');
     }
 
-    public function exchangeToken(string $exchangeCode, string $scope, string $partnerCode, string $partnerSecret): array
+    /**
+     * Partner credentials come from config only. They used to be passed in by
+     * the caller, which is how they ended up hard-coded in the browser bundle.
+     */
+    public function exchangeToken(string $exchangeCode, string $scope = 'SSO_AUTHENTICATION'): array
     {
         if (empty($exchangeCode)) {
             return [
@@ -37,10 +41,10 @@ class EGovSSOService
             return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eGov SSO returned an empty response.']];
         }
 
-        if ($partnerCode !== $this->partnerCode || $partnerSecret !== $this->partnerSecret) {
+        if (empty($this->partnerCode) || empty($this->partnerSecret)) {
             return [
-                'status' => 403,
-                'data' => ['message' => 'The request is forbidden. Invalid partner credentials.'],
+                'status' => 503,
+                'data' => ['message' => 'eGov SSO is not configured.'],
             ];
         }
 
@@ -50,7 +54,7 @@ class EGovSSOService
             'iss' => 'https://stg-superapp-sso.oueg.info',
             'iat' => time(),
             'scope' => $scope ?: 'SSO_AUTHENTICATION',
-            'pc' => $partnerCode,
+            'pc' => $this->partnerCode,
             'tki' => 68,
             'jti' => 'MVPCBEUVCGPZR',
             'exp' => time() + 3600,

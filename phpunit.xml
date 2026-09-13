@@ -22,8 +22,10 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
-        <!-- <env name="DB_CONNECTION" value="sqlite"/> -->
-        <!-- <env name="DB_DATABASE" value=":memory:"/> -->
+        <!-- Tests must never touch database/database.sqlite: RefreshDatabase
+             runs migrate:fresh, which wipes the demo data. -->
+        <env name="DB_CONNECTION" value="sqlite"/>
+        <env name="DB_DATABASE" value=":memory:"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
@@ -37,6 +39,9 @@
         <env name="EGOV_CHAIN_BASE_URL" value="http://localhost:3000/egovph/egovchain" force="true"/>
         <env name="EGOV_REPORT_BASE_URL" value="http://localhost:3000/egovph/ereport" force="true"/>
         <env name="EGOV_COMPASS_BASE_URL" value="http://localhost:3000/egovph/compass" force="true"/>
+        <env name="EGOV_EMESSAGE_BASE_URL" value="http://localhost:3000/egovph/emessage" force="true"/>
+        <env name="EGOV_PAY_BASE_URL" value="http://localhost:3000/egovph/pay" force="true"/>
+        <env name="EGOV_MODE" value="sandbox" force="true"/>
         <env name="EGOV_ENABLE_LIVE_MUTATIONS" value="false" force="true"/>
     </php>
 </phpunit>

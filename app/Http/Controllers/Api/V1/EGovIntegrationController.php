@@ -23,11 +23,9 @@ class EGovIntegrationController extends Controller
     {
         $code = $request->input('exchange_code', '');
         $scope = $request->input('scope', 'SSO_AUTHENTICATION');
-        // Partner credentials are server-side configuration; never accept them from clients.
-        $partnerCode = config('services.egov.sso.partner_code');
-        $partnerSecret = config('services.egov.sso.partner_secret');
-
-        $res = $sso->exchangeToken($code, $scope, $partnerCode, $partnerSecret);
+        // Partner credentials are server-side configuration; the service reads
+        // them from config itself and never accepts them from clients.
+        $res = $sso->exchangeToken($code, $scope);
         return response()->json($res['data'], $res['status']);
     }
 
@@ -96,7 +94,8 @@ class EGovIntegrationController extends Controller
     // --- 4. eGov AI ---
     public function aiToken(Request $request, EGovAIService $ai): JsonResponse
     {
-        $code = $request->input('access_code') ?: config('services.egov.ai.access_code', '');
+        // The access code is server-side configuration; never accept it from clients.
+        $code = (string) config('services.egov.ai.access_code');
         $res = $ai->generateToken($code);
         return response()->json($res['data'], $res['status']);
     }
@@ -240,8 +239,8 @@ class EGovIntegrationController extends Controller
     // --- 8. eReport ---
     public function ereportToken(Request $request, EReportService $report): JsonResponse
     {
-        $code = $request->input('access_code');
-        $res = $report->generateToken($code);
+        // The access code is server-side configuration; never accept it from clients.
+        $res = $report->generateToken(null);
         return response()->json($res['data'], $res['status']);
     }
 

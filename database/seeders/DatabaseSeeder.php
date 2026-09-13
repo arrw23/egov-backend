@@ -73,13 +73,19 @@ class DatabaseSeeder extends Seeder
         ]);
 
         // 3. Users
+        // The applicant must be the identity the app actually signs in as:
+        // MockEGovIdentityProvider resolves 'applicant' to egov_sub
+        // MVPCBEUVCGPZR. Seeding a different subject made GET /cases return []
+        // for the default applicant, so the dashboard fell back to hard-coded
+        // values.
         $applicantUser = User::create([
-            'egov_sub' => 'egov-sub-applicant-maria-001',
-            'name' => 'Maria Lourdes Santos',
-            'email' => 'maria.santos@example.ph',
+            'egov_sub' => 'MVPCBEUVCGPZR',
+            'name' => 'JOSIE SANTOS DELA CRUZ',
+            'email' => 'josie@yopmail.com',
+            'mobile' => '+639090000000',
             'role' => 'applicant',
             'verified_identity' => true,
-            'avatar_url' => 'https://ui-avatars.com/api/?name=Maria+Santos',
+            'avatar_url' => 'https://ui-avatars.com/api/?name=Josie+Dela+Cruz',
         ]);
 
         $hospitalStaff = User::create([
@@ -106,7 +112,7 @@ class DatabaseSeeder extends Seeder
         ApplicantProfile::create([
             'user_id' => $applicantUser->id,
             'philsys_id' => 'PSN-8192-3049-1829',
-            'full_name' => 'Maria Lourdes Santos',
+            'full_name' => 'JOSIE SANTOS DELA CRUZ',
             'birth_date' => '1989-09-18',
             'consent_given' => true,
             'consent_timestamp' => now()->subDays(5),
@@ -210,12 +216,12 @@ class DatabaseSeeder extends Seeder
         ]);
 
         // 9. Guarantee Letter
-        GuaranteeLetter::create([
+        $guaranteeLetter = GuaranteeLetter::create([
             'gl_number' => 'GL-DSWD-2026-04821',
             'agency_application_id' => $app->id,
             'medical_case_id' => $medicalCase->id,
             'patient_name' => 'JUAN DELA CRUZ SANTOS',
-            'applicant_name' => 'MARIA LOURDES SANTOS',
+            'applicant_name' => 'JOSIE SANTOS DELA CRUZ',
             'hospital_name' => 'Manila General Hospital',
             'approved_amount' => 50000.00,
             'covered_service' => 'Laparoscopic appendectomy and related confinement',
@@ -263,7 +269,7 @@ class DatabaseSeeder extends Seeder
             'message' => 'Your ₱50,000 medical assistance guarantee letter GL-DSWD-2026-04821 has been issued by DSWD NCR.',
             'type' => 'success',
             'reference_type' => 'GuaranteeLetter',
-            'reference_id' => 1,
+            'reference_id' => $guaranteeLetter->id,
         ]);
     }
 }

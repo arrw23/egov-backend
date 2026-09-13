@@ -53,6 +53,7 @@ Route::prefix('v1')->group(function () {
     // Auth & Identity
     Route::get('/auth/egov/redirect', [AuthController::class, 'redirect']);
     Route::get('/auth/egov/callback', [AuthController::class, 'callback']);
+    Route::post('/auth/egov/exchange', [AuthController::class, 'exchange']);
     Route::post('/auth/mock/login', [AuthController::class, 'mockLogin']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);

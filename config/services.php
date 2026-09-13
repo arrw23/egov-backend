@@ -37,6 +37,9 @@ return [
 
     'egov' => [
         'live_mutations' => env('EGOV_ENABLE_LIVE_MUTATIONS', false),
+        // Explicit sandbox|live switch. Anything other than 'live' is treated
+        // as sandbox, where canned responses are allowed. See EGovMode.
+        'mode' => env('EGOV_MODE', 'sandbox'),
         'sso' => [
             'partner_code' => env('EGOV_SSO_PARTNER_CODE'),
             'partner_secret' => env('EGOV_SSO_PARTNER_SECRET'),
@@ -62,7 +65,8 @@ return [
             'base_url' => env('EGOV_PAY_BASE_URL', 'http://localhost:3000/egovph/pay'),
         ],
         'report' => [
-            'access_code' => env('EGOV_REPORT_ACCESS_CODE', '2a72bdcac1b0405fb2c679d029f03cfb'),
+            // No default: a baked-in access code is a published credential.
+            'access_code' => env('EGOV_REPORT_ACCESS_CODE'),
             'access_token' => env('EGOV_REPORT_ACCESS_TOKEN'),
             'base_url' => env('EGOV_REPORT_BASE_URL', 'http://localhost:3000/egovph/ereport'),
         ],

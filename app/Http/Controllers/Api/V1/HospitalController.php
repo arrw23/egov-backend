@@ -34,16 +34,22 @@ class HospitalController extends Controller
         ]);
     }
 
-    public function showRequest(HospitalDocumentRequest $request): JsonResponse
+    /**
+     * The route parameter is {docReq}; implicit binding matches on the
+     * parameter *name*, so this argument must be named $docReq. Named
+     * $request, the container injected the HTTP request instead and
+     * $docReq->medicalCase was null, which 500'd in generateCaseSummary().
+     */
+    public function showRequest(HospitalDocumentRequest $docReq): JsonResponse
     {
-        $request->load(['medicalCase.applicant', 'medicalCase.documents', 'hospital']);
+        $docReq->load(['medicalCase.applicant', 'medicalCase.documents', 'hospital']);
 
         $aiService = new EGovAIService();
-        $aiSummary = $aiService->generateCaseSummary($request->medicalCase);
+        $aiSummary = $aiService->generateCaseSummary($docReq->medicalCase);
 
         return response()->json([
             'status' => 'success',
-            'request' => $request,
+            'request' => $docReq,
             'ai_extraction' => $aiSummary,
         ]);
     }

@@ -15,7 +15,8 @@ class EMessageService
     public function __construct()
     {
         $this->baseUrl = config('services.egov.emessage.base_url', 'https://platforms-api.e.gov.ph/emessage');
-        $this->apiToken = config('services.egov.emessage.access_token', 'f906c6acf1e547209f088c98dff92b4a');
+        // No hard-coded fallback token: a missing value must fail loudly.
+        $this->apiToken = (string) config('services.egov.emessage.access_token');
     }
 
     /**
@@ -56,11 +57,19 @@ class EMessageService
         ];
     }
 
-    public function send(User $user, string $title, string $message, string $type = 'info', ?string $refType = null, ?int $refId = null): Notification
+    /**
+     * Persist an in-app notification, and optionally push an SMS.
+     *
+     * $sms defaults to false: notifications for hospital staff, evaluators and
+     * applicants are in-app by default. Previously every notification pushed a
+     * real SMS to a single hard-coded number, because users had no mobile
+     * column and the null-coalesce always fell through.
+     */
+    public function send(User $user, string $title, string $message, string $type = 'info', ?string $refType = null, ?int $refId = null, bool $sms = false): Notification
     {
-        // If user has a mobile number, also push real-time SMS
-        $mobile = $user->mobile ?? '+639090000000';
-        $this->pushSms($mobile, "[$title] $message");
+        if ($sms && ! empty($user->mobile)) {
+            $this->pushSms($user->mobile, "[$title] $message");
+        }
 
         return Notification::create([
             'user_id' => $user->id,

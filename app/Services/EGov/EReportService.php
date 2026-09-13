@@ -13,7 +13,9 @@ class EReportService
 
     public function __construct()
     {
-        $this->accessCode = config('services.egov.report.access_code', '2a72bdcac1b0405fb2c679d029f03cfb');
+        // No hard-coded fallback: a missing value must fail loudly rather than
+        // authenticate with a published credential.
+        $this->accessCode = config('services.egov.report.access_code');
         $this->accessToken = config('services.egov.report.access_token');
         $this->baseUrl = config('services.egov.report.base_url', 'http://localhost:3000/egovph/ereport');
     }

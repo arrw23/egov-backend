@@ -25,10 +25,9 @@ Route::middleware([HandleCors::class])
         ]);
     });
 
-    // Root-level eGov API fallbacks & preflight OPTIONS support
-    Route::options('/{any}', function () {
-        return response()->json([], 200);
-    })->where('any', '.*');
+    // Preflight is answered by the HandleCors middleware using config/cors.php.
+    // The previous Route::options('/{any}') catch-all returned 200 but carried
+    // no CORS headers, so the browser still blocked the real request.
 
     Route::post('/v1/liveness/session', [EGovIntegrationController::class, 'createLivenessSession']);
     Route::get('/v1/liveness/result/{sessionToken}', [EGovIntegrationController::class, 'getLivenessResult']);

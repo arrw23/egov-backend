@@ -21,9 +21,10 @@ class DemoResetCommand extends Command
 
         $this->info('Pristine pitch state restored successfully!');
         $this->line('Simulated accounts ready:');
-        $this->line('- Applicant: Maria Lourdes Santos (Patient: Juan D. Santos)');
+        $this->line('- Applicant: JOSIE SANTOS DELA CRUZ / egov_sub MVPCBEUVCGPZR (Patient: Juan D. Santos)');
         $this->line('- Hospital Staff: Dr. Ana Reyes (Manila General Hospital)');
         $this->line('- Agency Evaluator: Miguel dela Cruz (DSWD NCR)');
+        $this->line('Note: the applicant matches the identity the app signs in as, so GET /api/v1/cases returns the seeded case.');
 
         return Command::SUCCESS;
     }
