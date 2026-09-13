@@ -73,11 +73,19 @@ return [
         'face_liveness' => [
             'api_key' => env('EGOV_FACE_LIVENESS_API_KEY'),
             'base_url' => env('EGOV_FACE_LIVENESS_BASE_URL', 'http://localhost:3000/egovph/face-liveness'),
+            // Public values served to the browser via /api/v1/egov/public-config
+            // so they are declared once here instead of being copied into the
+            // frontend bundle.
+            'sdk_src' => env('EGOV_FACE_LIVENESS_SDK_SRC', 'https://hackathon-everify-face-liveness.e.gov.ph/js/everify-liveness-sdk.min.js'),
+            'origin' => env('EGOV_FACE_LIVENESS_ORIGIN', 'https://liveness.everify.gov.ph'),
         ],
         'chain' => [
             'rpc_url' => env('EGOV_CHAIN_BASE_URL', 'http://localhost:3000/egovph/egovchain'),
             'api_key' => env('EGOV_CHAIN_API_KEY'),
-            'chain_id' => env('EGOV_CHAIN_ID', '2026'),
+            // Single source of truth for the chain id. The mock JSON-RPC
+            // endpoints already reported 13371 (0x343b) while this default said
+            // 2026; the adapters now derive their answer from here.
+            'chain_id' => env('EGOV_CHAIN_ID', '13371'),
             'contract_address' => env('EGOV_CHAIN_CONTRACT_ADDRESS'),
         ],
         'compass' => [

@@ -30,10 +30,49 @@ class IdentityController extends Controller
 
     public function verify(Request $request, EVerifyService $eVerify, EGovChainService $chain): JsonResponse
     {
-        $user = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('applicant');
-        $consent = $request->input('consent', true);
+        $request->validate([
+            'consent' => 'required|boolean',
+            'first_name' => 'nullable|string',
+            'middle_name' => 'nullable|string',
+            'last_name' => 'nullable|string',
+            'birth_date' => 'nullable|date',
+        ]);
 
-        $profile = $eVerify->recordConsentAndVerify($user, (bool) $consent);
+        $user = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('applicant');
+
+        if (! $request->boolean('consent')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Consent must be granted to proceed with the PhilSys eVerify identity check.',
+            ], 422);
+        }
+
+        // Perform the actual verification and store what eVerify returned.
+        // The profile used to be written with a hard-coded PhilSys ID and
+        // birth date for every user.
+        $tokenRes = $eVerify->authenticate(
+            (string) config('services.egov.everify.client_id'),
+            (string) config('services.egov.everify.client_secret')
+        );
+        $accessToken = $tokenRes['data']['data']['access_token'] ?? $tokenRes['data']['access_token'] ?? '';
+
+        $query = array_filter([
+            'first_name' => $request->input('first_name'),
+            'middle_name' => $request->input('middle_name'),
+            'last_name' => $request->input('last_name'),
+            'birth_date' => $request->input('birth_date'),
+        ], fn ($v) => $v !== null && $v !== '');
+
+        $verified = $eVerify->verifyDemographics($query, $accessToken);
+
+        if (($verified['status'] ?? 500) !== 200) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $verified['data']['message'] ?? 'PhilSys eVerify could not verify this identity.',
+            ], $verified['status'] ?? 502);
+        }
+
+        $profile = $eVerify->recordConsentAndVerify($user, true, $verified);
 
         $chain->recordEvent(
             null,
@@ -49,12 +88,24 @@ class IdentityController extends Controller
             // Ignore error
         }
 
+        if ($profile->status !== 'verified') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'eVerify did not return a verified match for these details.',
+                'profile' => [
+                    'full_name' => $profile->full_name,
+                    'verification_reference' => $profile->verification_reference,
+                    'status' => 'Unverified',
+                ],
+            ], 422);
+        }
+
         return response()->json([
             'status' => 'success',
             'badge' => 'PhilSys eVerify Verified',
             'profile' => [
                 'full_name' => $profile->full_name,
-                'birth_date' => $profile->birth_date ? $profile->birth_date->format('d F Y') : '18 September 1989',
+                'birth_date' => $profile->birth_date ? $profile->birth_date->format('d F Y') : null,
                 'philsys_id' => $profile->philsys_id,
                 'verification_reference' => $profile->verification_reference,
                 'consent_given' => $profile->consent_given,

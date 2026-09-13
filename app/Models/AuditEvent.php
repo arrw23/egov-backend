@@ -18,6 +18,7 @@ class AuditEvent extends Model
         'description',
         'metadata',
         'chain_hash',
+        'payload_sha256',
     ];
 
     protected $casts = [

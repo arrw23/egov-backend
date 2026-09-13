@@ -71,10 +71,11 @@ class ApplicantCaseController extends Controller
 
         $user = Auth::user() ?: (new MockEGovIdentityProvider())->resolveUser('applicant');
 
-        $caseNumber = 'MGL-2026-' . rand(100000, 999999);
-
         $case = MedicalCase::create([
-            'case_number' => $caseNumber,
+            // Placeholder; replaced below with a deterministic number derived
+            // from the row id. The old 'MGL-2026-' . rand() could collide on the
+            // unique index and 500, and hard-coded the year.
+            'case_number' => 'PENDING',
             'applicant_id' => $user->id,
             'patient_name' => $request->input('patient_name'),
             'relationship' => $request->input('relationship'),
@@ -84,6 +85,11 @@ class ApplicantCaseController extends Controller
             'treatment_date' => $request->input('treatment_date', now()->format('Y-m-d')),
             'status' => CaseStateMachineService::DRAFT,
         ]);
+
+        // Deterministic, collision-free, and year-accurate.
+        $caseNumber = sprintf('MGL-%d-%06d', now()->year, $case->id);
+        $case->case_number = $caseNumber;
+        $case->save();
 
         $chain->recordEvent(
             $case,
@@ -156,28 +162,23 @@ class ApplicantCaseController extends Controller
         $request->validate([
             'document_type' => 'required|string',
             'title' => 'required|string',
-            'file' => 'nullable|file|max:10240',
+            // A document without a file has no integrity guarantee, so the
+            // upload is required. Previously a missing file produced a "hash"
+            // of a timestamp string and a random file size.
+            'file' => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240',
         ]);
 
         $docType = $request->input('document_type');
         $title = $request->input('title');
 
-        if ($request->hasFile('file') && $request->file('file')->isValid()) {
-            $file = $request->file('file');
-            $fileName = time() . '_' . Str::slug($title) . '.' . $file->getClientOriginalExtension();
-            $storagePath = $file->storeAs("cases/{$case->id}", $fileName, 'public');
-            $fileSize = $file->getSize();
-            $fullSha256 = hash_file('sha256', $file->getRealPath());
-            $hash = 'DOC-HASH-' . strtoupper(substr($fullSha256, 0, 16));
-        } else {
-            $content = "CONTENT_" . time() . '_' . $docType . '_' . $title;
-            $storagePath = "cases/{$case->id}/{$docType}.pdf";
-            $fileSize = 1024 * rand(500, 2500);
-            $fullSha256 = hash('sha256', $content);
-            $hash = $chain->generateDocumentHash($content);
-        }
+        $file = $request->file('file');
+        $fileName = time() . '_' . Str::slug($title) . '.' . $file->getClientOriginalExtension();
+        $storagePath = $file->storeAs("cases/{$case->id}", $fileName, 'public');
+        $fileSize = $file->getSize();
+        $fullSha256 = hash_file('sha256', $file->getRealPath());
+        $hash = $chain->generateDocumentHash($fullSha256);
 
-        $aiResult = $aiService->classifyAndExtract($title, $docType);
+        $aiResult = $aiService->classifyAndExtract($title, $docType, $file);
 
         // Anchor record onto eGovChain Hyperledger Besu Blockchain
         $besuRes = $chain->anchorRecordOnBesu('DOC-' . $case->id . '-' . time(), $fullSha256, 'CITIZEN_DOCUMENT_UPLOAD');
@@ -353,5 +354,21 @@ class ApplicantCaseController extends Controller
             'status' => 'success',
             'timeline' => $events,
         ]);
+    }
+
+    /**
+     * Recomputes the audit hash chain for a case and reports the first broken
+     * link, if any.
+     */
+    public function verifyTimeline(MedicalCase $case, EGovChainService $chain): JsonResponse
+    {
+        $result = $chain->verifyTimeline($case);
+
+        return response()->json([
+            'status' => 'success',
+            'case_id' => $case->id,
+            'case_number' => $case->case_number,
+            'verification' => $result,
+        ], $result['verified'] ? 200 : 409);
     }
 }

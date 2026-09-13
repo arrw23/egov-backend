@@ -50,6 +50,11 @@ Route::post('/messaging/v1/sms/push', [EGovIntegrationController::class, 'pushSm
 |--------------------------------------------------------------------------
 */
 Route::prefix('v1')->group(function () {
+    // Public, non-secret configuration for the browser (SSO partner code,
+    // liveness public key + SDK URL). Deliberately unauthenticated: these
+    // values are already public and the login page needs them before sign-in.
+    Route::get('/egov/public-config', [EGovIntegrationController::class, 'publicConfig']);
+
     // Auth & Identity
     Route::get('/auth/egov/redirect', [AuthController::class, 'redirect']);
     Route::get('/auth/egov/callback', [AuthController::class, 'callback']);
@@ -110,6 +115,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/agency-programs', [ApplicantCaseController::class, 'agencyPrograms']);
     Route::post('/cases/{case}/agency-applications', [ApplicantCaseController::class, 'submitAgencyApplication']);
     Route::get('/cases/{case}/timeline', [ApplicantCaseController::class, 'timeline']);
+    Route::get('/cases/{case}/timeline/verify', [ApplicantCaseController::class, 'verifyTimeline']);
 
     // Hospital Portal
     Route::get('/hospital/requests', [HospitalController::class, 'pendingRequests']);

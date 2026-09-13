@@ -27,7 +27,7 @@ class EGovAIService
             ];
         }
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::asJson()->timeout(20)->post(rtrim($this->baseUrl, '/') . '/api/v1/egov/integration/token', [
                 'access_code' => $code,
             ]);
@@ -47,7 +47,7 @@ class EGovAIService
 
     public function credits(?string $token = null): array
     {
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $bearer = $token ?: $this->requestLiveToken();
             if ($bearer) {
                 $response = Http::withToken($bearer)->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/egov/integration/credits');
@@ -183,7 +183,7 @@ class EGovAIService
 
     public function documentExtractor($file = null): array
     {
-        if (str_starts_with($this->baseUrl, 'https://') && $file) {
+        if (EGovMode::isLive() && $file) {
             $token = $this->requestLiveToken();
             if ($token) {
                 $response = Http::withToken($token)->timeout(30)->attach('file', fopen($file->getRealPath(), 'r'), $file->getClientOriginalName())
@@ -202,7 +202,7 @@ class EGovAIService
 
     private function livePost(string $path, array $payload): ?array
     {
-        if (!str_starts_with($this->baseUrl, 'https://')) return null;
+        if (!EGovMode::isLive()) return null;
         $token = $this->requestLiveToken();
         if (!$token) return ['status' => 401, 'data' => ['message' => 'eGov AI token generation failed.']];
         $response = Http::asJson()->withToken($token)->timeout(30)->post(rtrim($this->baseUrl, '/') . $path, $payload);
@@ -215,7 +215,7 @@ class EGovAIService
         return $response->successful() ? ($response->json('access_token') ?: $response->json('data.access_token')) : null;
     }
 
-    public function classifyAndExtract(string $fileName, string $docType): array
+    public function classifyAndExtract(string $fileName, string $docType, $file = null): array
     {
         $type = match (strtolower($docType)) {
             'id' => 'PhilSys Digital ID',
@@ -224,41 +224,164 @@ class EGovAIService
             'medical_abstract' => 'Hospital Medical Abstract',
             'statement_of_account', 'soa' => 'Statement of Account / Billing Estimate',
             'treatment_order' => 'Physician Treatment Order',
+            'social_case_study' => 'Social Case Study Report',
             default => 'Official Medical Record',
         };
 
+        $extractedData = [
+            'document_name' => $fileName,
+            'extracted_at' => now()->toIso8601String(),
+            'disclaimer' => 'AI-generated extraction — subject to authorized staff review.',
+        ];
+
+        // Sandbox/mock classification is a label lookup, not a real model
+        // inference, so it must not claim 0.98 confidence.
+        $confidence = null;
+        $source = 'sandbox_classifier';
+
+        if ($file !== null) {
+            if (EGovMode::isLive()) {
+                $result = $this->documentExtractor($file);
+
+                if (($result['status'] ?? 500) !== 200) {
+                    return [
+                        'classified_type' => $type,
+                        'confidence' => null,
+                        'source' => 'live_document_extractor',
+                        'error' => $result['data']['message'] ?? 'eGov AI document extraction failed.',
+                        'extracted_data' => $extractedData,
+                    ];
+                }
+
+                $extractedData['ai_output'] = $result['data']['data'] ?? $result['data'];
+                $confidence = $result['data']['confidence'] ?? null;
+                $source = 'live_document_extractor';
+            } else {
+                $extractedData['note'] = 'Sandbox mode: no AI provider was called; the document type was inferred from the upload metadata.';
+            }
+        }
+
         return [
             'classified_type' => $type,
-            'confidence' => 0.98,
-            'extracted_data' => [
-                'document_name' => $fileName,
-                'extracted_at' => now()->toIso8601String(),
-                'disclaimer' => 'AI-generated extraction — subject to authorized staff review.',
-            ],
+            'confidence' => $confidence,
+            'source' => $source,
+            'extracted_data' => $extractedData,
         ];
     }
 
+    /**
+     * The document types this service treats as the core requirement set.
+     * Shared with the agency completeness calculation so the two cannot drift.
+     */
+    public const REQUIRED_DOCUMENTS = [
+        'id' => 'PhilSys Digital ID',
+        'indigency' => 'Barangay Certificate of Indigency',
+        'medical_abstract' => 'Hospital Medical Abstract',
+        'statement_of_account' => 'Statement of Account / Billing Estimate',
+    ];
+
+    /**
+     * Requirements list with per-document status, used by the agency inbox so
+     * the UI does not have to invent completeness blocks.
+     */
+    public function requirementStatuses(MedicalCase $medicalCase): array
+    {
+        $byType = $medicalCase->documents->keyBy('document_type');
+
+        $requirements = [];
+        foreach (self::REQUIRED_DOCUMENTS as $type => $title) {
+            $doc = $byType->get($type);
+            $requirements[] = [
+                'type' => $type,
+                'title' => $title,
+                'document_id' => $doc?->id,
+                'status' => $doc?->status ?? 'missing',
+            ];
+        }
+
+        return $requirements;
+    }
+
+    public function completenessScore(MedicalCase $medicalCase): int
+    {
+        $docs = $medicalCase->documents->keyBy('document_type');
+
+        $satisfied = 0;
+        foreach (array_keys(self::REQUIRED_DOCUMENTS) as $type) {
+            $doc = $docs->get($type);
+            if ($doc && in_array($doc->status, ['verified', 'certified'], true)) {
+                $satisfied++;
+            }
+        }
+
+        return (int) round(($satisfied / max(count(self::REQUIRED_DOCUMENTS), 1)) * 100);
+    }
+
+    /**
+     * Builds the case summary from real case facts. In live mode the narrative
+     * is composed by the eGov AI assistant; in sandbox it is assembled locally
+     * from the same facts. Either way the numbers come from the case.
+     */
     public function generateCaseSummary(MedicalCase $medicalCase): array
     {
-        $documents = $medicalCase->documents;
-        $docTypes = $documents->pluck('document_type')->toArray();
+        $requirements = $this->requirementStatuses($medicalCase);
+        $missing = array_values(array_map(
+            fn ($r) => $r['type'],
+            array_filter($requirements, fn ($r) => $r['status'] === 'missing')
+        ));
+        $completeness = $this->completenessScore($medicalCase);
 
-        $requiredDocs = ['id', 'indigency', 'medical_abstract', 'statement_of_account'];
-        $missing = array_diff($requiredDocs, $docTypes);
+        $facts = [
+            'patient' => $medicalCase->patient_name,
+            'case_number' => $medicalCase->case_number,
+            'condition' => $medicalCase->condition_category,
+            'provider' => $medicalCase->provider?->name ?? 'Selected hospital',
+            'verified_bill' => (float) $medicalCase->verified_bill,
+            'relationship' => $medicalCase->relationship,
+            'status' => $medicalCase->status,
+            'documents_present' => $medicalCase->documents->pluck('document_type')->values()->all(),
+            'missing' => $missing,
+        ];
+
+        $source = 'sandbox_template';
 
         $summary = sprintf(
-            "Patient %s requires medical treatment (%s) at %s. The verified hospital-certified bill is ₱%s. All core documentary requirements are %s.",
-            $medicalCase->patient_name,
-            $medicalCase->condition_category,
-            $medicalCase->provider ? $medicalCase->provider->name : 'Selected Hospital',
-            number_format((float) $medicalCase->verified_bill, 2),
-            empty($missing) ? 'complete and certified' : 'pending (' . implode(', ', $missing) . ')'
+            'Patient %s (%s, %s) requires %s at %s. The verified hospital-certified bill is ₱%s. '
+            . '%d of %d core documentary requirements are verified or certified (%d%% complete)%s.',
+            $facts['patient'],
+            $facts['case_number'],
+            $facts['relationship'] ?? 'relationship not stated',
+            $facts['condition'] ?? 'treatment',
+            $facts['provider'],
+            number_format($facts['verified_bill'], 2),
+            count(self::REQUIRED_DOCUMENTS) - count($missing),
+            count(self::REQUIRED_DOCUMENTS),
+            $completeness,
+            empty($missing) ? '' : '. Outstanding: ' . implode(', ', $missing)
         );
+
+        if (EGovMode::isLive()) {
+            $prompt = 'Summarise this medical assistance case for an evaluator, using only these facts: '
+                . json_encode($facts, JSON_UNESCAPED_SLASHES);
+            $ai = $this->livePost('/api/v1/egov/integration/ai_assistant/generate', [
+                'prompt' => $prompt,
+                'category' => 'PH',
+            ]);
+
+            $narrative = $ai['data']['data'] ?? null;
+            if (($ai['status'] ?? 500) === 200 && is_string($narrative) && $narrative !== '') {
+                $summary = $narrative;
+                $source = 'live_ai_assistant';
+            }
+        }
 
         return [
             'summary' => $summary,
-            'missing_requirements' => array_values($missing),
-            'completeness_score' => empty($missing) ? 100 : 75,
+            'facts' => $facts,
+            'requirements' => $requirements,
+            'missing_requirements' => $missing,
+            'completeness_score' => $completeness,
+            'source' => $source,
             'disclaimer' => 'AI-generated summary — subject to evaluator review.',
         ];
     }

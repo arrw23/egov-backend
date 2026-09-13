@@ -196,7 +196,12 @@ class EGovIntegrationsTest extends TestCase
             'record_id' => 'GL-DSWD-2026-04821',
             'hash' => '0xd8f2910c5d12a8f9104b2819c5b201f8',
         ]);
-        $anchor->assertStatus(200)->assertJsonPath('result.chain_name', 'eGovChain (Hyperledger Besu)');
+        // With no registry contract configured the ledger is simulated, and the
+        // response must say so rather than claim a Hyperledger Besu anchor.
+        $anchor->assertStatus(200)
+            ->assertJsonPath('simulated', true)
+            ->assertJsonPath('anchored', false)
+            ->assertJsonPath('result.chain_name', 'Simulated ledger (no chain submission)');
     }
 
     public function test_emessage_sms_push(): void

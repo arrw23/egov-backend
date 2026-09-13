@@ -13,9 +13,12 @@ class Organization extends Model
     protected $fillable = [
         'name',
         'code',
+        'short_code',
         'type',
         'address',
         'contact_email',
+        'signatory_name',
+        'signatory_role',
     ];
 
     public function users(): HasMany

@@ -24,7 +24,7 @@ class EReportService
     {
         $code = $accessCode ?: $this->accessCode;
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
             ])->timeout(20)->post(rtrim($this->baseUrl, '/') . '/api/integration/token', [
@@ -50,7 +50,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (str_starts_with($this->baseUrl, 'https://') && $authToken) {
+        if (EGovMode::isLive() && $authToken) {
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/datasets/report_types');
@@ -79,7 +79,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (str_starts_with($this->baseUrl, 'https://') && $authToken) {
+        if (EGovMode::isLive() && $authToken) {
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/datasets/regions');
@@ -107,7 +107,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (str_starts_with($this->baseUrl, 'https://') && $authToken) {
+        if (EGovMode::isLive() && $authToken) {
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/datasets/provinces', [
@@ -136,7 +136,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (str_starts_with($this->baseUrl, 'https://') && $authToken) {
+        if (EGovMode::isLive() && $authToken) {
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/datasets/municipalities', [
@@ -165,7 +165,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (str_starts_with($this->baseUrl, 'https://') && $authToken) {
+        if (EGovMode::isLive() && $authToken) {
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/datasets/barangays', [
@@ -212,7 +212,7 @@ class EReportService
             'longitude' => $payload['longitude'] ?? '120.98',
         ]);
 
-        if (str_starts_with($this->baseUrl, 'https://') && $authToken) {
+        if (EGovMode::isLive() && $authToken) {
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
                 'Content-Type' => 'application/json',
@@ -239,7 +239,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (str_starts_with($this->baseUrl, 'https://') && $authToken) {
+        if (EGovMode::isLive() && $authToken) {
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
                 'Content-Type' => 'application/json',
@@ -267,7 +267,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (str_starts_with($this->baseUrl, 'https://') && $authToken) {
+        if (EGovMode::isLive() && $authToken) {
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
                 'Content-Type' => 'application/json',
@@ -294,7 +294,7 @@ class EReportService
 
     public function getReports(string $viewToken, array $params = []): array
     {
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-EReport-View-Token' => $viewToken,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/reports', $params);
@@ -343,7 +343,7 @@ class EReportService
 
     public function getReportByCaseNumber(string $caseNumber, string $viewToken): array
     {
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-EReport-View-Token' => $viewToken,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/reports/' . $caseNumber);
@@ -388,7 +388,7 @@ class EReportService
 
     public function submitAuditReport(string $action, array $payload, ?User $actor = null): array
     {
-        if (str_starts_with($this->baseUrl, 'https://') && config('services.egov.live_mutations')) {
+        if (EGovMode::isLive() && config('services.egov.live_mutations')) {
             return $this->submitComplaint(array_merge($payload, ['subject' => $action]));
         }
 

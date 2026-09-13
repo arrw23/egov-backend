@@ -26,7 +26,7 @@ class EMessageService
      */
     public function pushSms(string $number, string $message): array
     {
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             try {
                 $response = Http::withHeaders([
                     'X-EMESSAGE-Auth' => $this->apiToken,
@@ -67,11 +67,31 @@ class EMessageService
      */
     public function send(User $user, string $title, string $message, string $type = 'info', ?string $refType = null, ?int $refId = null, bool $sms = false): Notification
     {
+        return $this->sendWithReceipt($user, $title, $message, $type, $refType, $refId, $sms)['notification'];
+    }
+
+    /**
+     * Same as send(), but also returns the SMS dispatch receipt so callers can
+     * surface the real provider result rather than guessing at it.
+     *
+     * @return array{notification: Notification, sms: array{number: string, message: string, status: int|null}|null}
+     */
+    public function sendWithReceipt(User $user, string $title, string $message, string $type = 'info', ?string $refType = null, ?int $refId = null, bool $sms = false): array
+    {
+        $receipt = null;
+
         if ($sms && ! empty($user->mobile)) {
-            $this->pushSms($user->mobile, "[$title] $message");
+            $result = $this->pushSms($user->mobile, "[$title] $message");
+
+            $receipt = [
+                'number' => $user->mobile,
+                'message' => $result['data']['data']['message']
+                    ?? ($result['data']['message'] ?? 'SMS dispatch attempted.'),
+                'status' => $result['status'] ?? null,
+            ];
         }
 
-        return Notification::create([
+        $notification = Notification::create([
             'user_id' => $user->id,
             'title' => $title,
             'message' => $message,
@@ -79,6 +99,8 @@ class EMessageService
             'reference_type' => $refType,
             'reference_id' => $refId,
         ]);
+
+        return ['notification' => $notification, 'sms' => $receipt];
     }
 }
 

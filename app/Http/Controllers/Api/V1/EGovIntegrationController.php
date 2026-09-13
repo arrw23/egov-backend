@@ -100,6 +100,29 @@ class EGovIntegrationController extends Controller
         return response()->json($res['data'], $res['status']);
     }
 
+    /**
+     * Public (non-secret) eGov configuration for the browser.
+     *
+     * These values are public by design — the SSO login widget needs the
+     * partner code, and the liveness SDK needs its public key. Serving them
+     * from config means rotating them is a one-place change instead of editing
+     * four copied literals in the frontend.
+     */
+    public function publicConfig(): JsonResponse
+    {
+        return response()->json([
+            'sso' => [
+                'partner_code' => config('services.egov.sso.partner_code'),
+                'host' => config('services.egov.sso.base_url'),
+            ],
+            'liveness' => [
+                'pubkey' => config('services.egov.everify.pubkey'),
+                'sdk_src' => config('services.egov.face_liveness.sdk_src'),
+                'origin' => config('services.egov.face_liveness.origin'),
+            ],
+        ]);
+    }
+
     public function aiAssistant(Request $request, EGovAIService $ai): JsonResponse
     {
         $prompt = $request->input('prompt', 'how can i get my digital tin id here in egov');

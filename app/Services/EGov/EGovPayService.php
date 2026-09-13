@@ -55,7 +55,7 @@ class EGovPayService
             'description' => $payload['description'] ?? null,
         ]));
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-eGovPay-Token' => $token,
                 'Content-Type' => 'application/json; charset=utf-8',
@@ -89,7 +89,7 @@ class EGovPayService
             $token = 'test_' . $token;
         }
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-eGovPay-Token' => $token,
                 'Content-Type' => 'application/json; charset=utf-8',
@@ -142,7 +142,7 @@ class EGovPayService
             $token = 'test_' . $token;
         }
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-eGovPay-Token' => $token,
                 'Content-Type' => 'application/json; charset=utf-8',

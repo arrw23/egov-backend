@@ -9,11 +9,18 @@ use App\Models\GuaranteeUtilization;
 use App\Models\MedicalCase;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Http;
 
 class EGovChainService
 {
+    /**
+     * Placeholder contract address used only when the ledger is simulated.
+     * Never presented as a real deployment.
+     */
+    private const SIMULATED_CONTRACT = '0x0000000000000000000000000000000000000000';
+
     protected string $rpcUrl;
     protected string $chainId;
     protected string $smartContractAddress;
@@ -21,52 +28,204 @@ class EGovChainService
 
     public function __construct()
     {
-        $this->rpcUrl = config('services.egov.chain.rpc_url', 'https://besu.egov.gov.ph/rpc');
-        $this->chainId = config('services.egov.chain.chain_id') ?: '2026'; // Zero-Fee Hyperledger Besu eGovChain ID
-        $this->smartContractAddress = config('services.egov.chain.contract_address') ?: '0x71C7656EC7ab88b098defB751B7401B5f6d8976F';
+        $this->rpcUrl = config('services.egov.chain.rpc_url', 'http://localhost:3000/egovph/egovchain');
+        // Chain id comes from config only, so it can no longer disagree with
+        // the value the mock eth_chainId reports.
+        $this->chainId = (string) (config('services.egov.chain.chain_id') ?: '13371');
+        $this->smartContractAddress = (string) (config('services.egov.chain.contract_address')
+            ?: self::SIMULATED_CONTRACT);
         $this->apiKey = config('services.egov.chain.api_key');
     }
 
-    public function recordEvent(?MedicalCase $medicalCase, ?User $actor, string $action, string $description, array $metadata = []): AuditEvent
+    /**
+     * True when no real ledger is reachable/configured, so anchoring only
+     * produces locally-generated placeholders.
+     */
+    public function isSimulated(): bool
     {
-        $payload = json_encode([
-            'case_id' => $medicalCase?->id,
-            'actor_id' => $actor?->id,
-            'action' => $action,
-            'description' => $description,
-            'metadata' => $metadata,
-            'timestamp' => now()->toIso8601String(),
-        ]);
-
-        $sha256 = hash('sha256', $payload);
-        $txHash = '0x' . hash('sha256', $sha256 . time());
-        $chainHash = 'EGC-' . strtoupper(substr($sha256, 0, 16));
-
-        return AuditEvent::create([
-            'medical_case_id' => $medicalCase?->id,
-            'actor_id' => $actor?->id,
-            'actor_name' => $actor ? $actor->name : 'eGov System Adapter',
-            'action' => $action,
-            'description' => $description,
-            'metadata' => array_merge($metadata, [
-                'besu_tx_hash' => $txHash,
-                'besu_contract' => $this->smartContractAddress,
-                'network' => 'Hyperledger Besu Zero-Fee eGovChain',
-            ]),
-            'chain_hash' => $chainHash,
-        ]);
+        return EGovMode::isSandbox()
+            || empty(config('services.egov.chain.contract_address'))
+            || $this->smartContractAddress === self::SIMULATED_CONTRACT;
     }
 
-    public function generateDocumentHash(string $content): string
+    public function ledgerLabel(): string
     {
-        return 'DOC-HASH-' . strtoupper(substr(hash('sha256', $content), 0, 16));
+        return $this->isSimulated()
+            ? 'Simulated ledger (no chain submission)'
+            : 'eGovChain (Hyperledger Besu)';
+    }
+
+    public function contractAddress(): string
+    {
+        return $this->smartContractAddress;
+    }
+
+    public function chainId(): string
+    {
+        return $this->chainId;
     }
 
     /**
-     * Hyperledger Besu JSON-RPC Method: egov_anchorRecord / eth_sendRawTransaction
+     * Link value used as the "previous hash" for the first audit event.
+     */
+    public const GENESIS_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
+
+    public function recordEvent(?MedicalCase $medicalCase, ?User $actor, string $action, string $description, array $metadata = []): AuditEvent
+    {
+        return DB::transaction(function () use ($medicalCase, $actor, $action, $description, $metadata) {
+            $payload = json_encode([
+                'case_id' => $medicalCase?->id,
+                'actor_id' => $actor?->id,
+                'action' => $action,
+                'description' => $description,
+                'metadata' => $metadata,
+                'timestamp' => now()->toIso8601String(),
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+            $sha256 = hash('sha256', $payload);
+            $txHash = '0x' . hash('sha256', $sha256 . time());
+
+            // Chain each event to its predecessor. Previously the hash covered
+            // only its own row and stored a 16-character prefix, so editing any
+            // row left every hash still "valid" — the log was not tamper-evident.
+            $previousHash = AuditEvent::query()
+                ->lockForUpdate()
+                ->orderByDesc('id')
+                ->value('chain_hash') ?: self::GENESIS_HASH;
+
+            $chainHash = hash('sha256', $previousHash . $sha256);
+
+            return AuditEvent::create([
+                'medical_case_id' => $medicalCase?->id,
+                'actor_id' => $actor?->id,
+                'actor_name' => $actor ? $actor->name : 'eGov System Adapter',
+                'action' => $action,
+                'description' => $description,
+                'metadata' => array_merge($metadata, [
+                    'besu_tx_hash' => $txHash,
+                    'besu_contract' => $this->smartContractAddress,
+                    'network' => $this->ledgerLabel(),
+                    'ledger_simulated' => $this->isSimulated(),
+                ]),
+                'chain_hash' => $chainHash,
+                'payload_sha256' => $sha256,
+            ]);
+        });
+    }
+
+    /**
+     * Recompute the audit hash chain and report the first broken link.
+     *
+     * Returns verified=false plus the offending event id when a stored
+     * chain_hash does not match the hash of (previous chain_hash + payload
+     * digest), or when any event predates chaining and therefore cannot be
+     * checked at all. A chain with unchecked links is not a verified chain.
+     */
+    public function verifyTimeline(?MedicalCase $medicalCase = null): array
+    {
+        $query = AuditEvent::query()->orderBy('id');
+        if ($medicalCase) {
+            $query->where('medical_case_id', $medicalCase->id);
+        }
+
+        $previousHash = self::GENESIS_HASH;
+        $checked = 0;
+        $unverifiable = [];
+
+        foreach ($query->get() as $event) {
+            if (empty($event->payload_sha256)) {
+                $unverifiable[] = $event->id;
+                // Re-seed the link so later events are still checked against
+                // the hash this row actually carries.
+                $previousHash = $event->chain_hash;
+                continue;
+            }
+
+            $expected = hash('sha256', $previousHash . $event->payload_sha256);
+
+            if (! hash_equals($expected, (string) $event->chain_hash)) {
+                return [
+                    'verified' => false,
+                    'checked' => $checked,
+                    'broken_at_event_id' => $event->id,
+                    'broken_action' => $event->action,
+                    'expected_hash' => $expected,
+                    'stored_hash' => $event->chain_hash,
+                    'unverifiable_event_ids' => $unverifiable,
+                    'reason' => 'chain_link_mismatch',
+                    'ledger_simulated' => $this->isSimulated(),
+                ];
+            }
+
+            $previousHash = $event->chain_hash;
+            $checked++;
+        }
+
+        if (! empty($unverifiable)) {
+            return [
+                'verified' => false,
+                'checked' => $checked,
+                'head_hash' => $previousHash,
+                'unverifiable_event_ids' => $unverifiable,
+                'reason' => 'events_predate_chaining',
+                'ledger_simulated' => $this->isSimulated(),
+            ];
+        }
+
+        return [
+            'verified' => true,
+            'checked' => $checked,
+            'head_hash' => $previousHash,
+            'unverifiable_event_ids' => [],
+            'reason' => null,
+            'ledger_simulated' => $this->isSimulated(),
+        ];
+    }
+
+    /**
+     * Full SHA-256 digest for a document's content.
+     *
+     * Returns the complete 64-character hash. It previously returned only the
+     * first 16 hex characters prefixed with "DOC-HASH-", which is a 64-bit
+     * truncation and not a usable integrity guarantee.
+     */
+    public function generateDocumentHash(string $content): string
+    {
+        return hash('sha256', $content);
+    }
+
+    /**
+     * Anchors a record on eGovChain.
+     *
+     * When the ledger is simulated (no contract address, sandbox mode) this
+     * returns locally-generated placeholders explicitly marked
+     * `simulated => true` — it must not be read as a chain submission.
+     *
+     * In live mode it performs a real JSON-RPC call and returns the node's
+     * answer. If the node is unreachable or unconfigured it reports
+     * `anchored => false`; it never fabricates a transaction hash.
      */
     public function anchorRecordOnBesu(string $recordId, string $payloadHash, string $recordType = 'GUARANTEE_LETTER'): array
     {
+        if (! $this->isSimulated()) {
+            $result = $this->submitAnchorToNode($recordId, $payloadHash, $recordType);
+
+            if ($result !== null) {
+                return $result;
+            }
+
+            return [
+                'jsonrpc' => '2.0',
+                'id' => 1,
+                'anchored' => false,
+                'simulated' => false,
+                'error' => [
+                    'code' => -32603,
+                    'message' => 'eGovChain node did not confirm the anchor; no transaction was recorded.',
+                ],
+            ];
+        }
+
         $blockNumber = Cache::get('egov_chain_block', 1842000);
         Cache::put('egov_chain_block', $blockNumber + 1);
         $txHash = '0x' . strtolower(hash('sha256', $recordId . $payloadHash . microtime()));
@@ -75,31 +234,74 @@ class EGovChainService
         return [
             'jsonrpc' => '2.0',
             'id' => 1,
+            // Explicit: nothing was submitted to any chain.
+            'anchored' => false,
+            'simulated' => true,
             'result' => [
-                'status' => '0x1', // Success
+                'status' => '0x1',
                 'transactionHash' => $txHash,
                 'transactionIndex' => '0x1',
                 'blockHash' => $blockHash,
                 'blockNumber' => '0x' . dechex($blockNumber),
-                'from' => '0x95222290DD7278Aa3Ddd389Cc1E1d165CC4BAfe5',
+                'from' => '0x0000000000000000000000000000000000000000',
                 'to' => $this->smartContractAddress,
-                'gasUsed' => '0x0', // Zero-Fee Hyperledger Besu
+                'gasUsed' => '0x0',
                 'cumulativeGasUsed' => '0x0',
                 'contractAddress' => null,
                 'logs' => [
                     [
                         'address' => $this->smartContractAddress,
                         'topics' => [
-                            '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef', // Event signature: RecordAnchored(bytes32,string)
+                            '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
                             '0x' . str_pad(substr(hash('sha256', $recordId), 0, 64), 64, '0', STR_PAD_LEFT),
                         ],
                         'data' => '0x' . bin2hex(json_encode(['record_id' => $recordId, 'hash' => $payloadHash, 'type' => $recordType])),
                     ],
                 ],
-                'chain_name' => 'eGovChain (Hyperledger Besu)',
-                'consensus' => 'IBFT 2.0 Proof of Authority (Government Nodes)',
+                'chain_name' => $this->ledgerLabel(),
+                'consensus' => 'none (simulated)',
+                'chain_id' => $this->chainId,
             ],
         ];
+    }
+
+    /**
+     * Real submission path. Returns null when the node could not be reached or
+     * did not return a transaction hash.
+     */
+    private function submitAnchorToNode(string $recordId, string $payloadHash, string $recordType): ?array
+    {
+        $endpoint = rtrim($this->rpcUrl, '/');
+        if ($this->apiKey) {
+            $endpoint .= '/' . ltrim($this->apiKey, '/');
+        }
+
+        try {
+            $response = Http::withHeaders(['Content-Type' => 'application/json'])
+                ->timeout(20)
+                ->post($endpoint, [
+                    'jsonrpc' => '2.0',
+                    'method' => 'egov_anchorRecord',
+                    'params' => [$recordId, $payloadHash, $recordType],
+                    'id' => 1,
+                ]);
+
+            if (! $response->successful()) {
+                return null;
+            }
+
+            $json = $response->json();
+            if (! is_array($json) || empty($json['result']['transactionHash'])) {
+                return null;
+            }
+
+            $json['anchored'] = true;
+            $json['simulated'] = false;
+
+            return $json;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**
@@ -107,21 +309,58 @@ class EGovChainService
      */
     public function verifyRecordOnBesu(string $txHashOrRecordId): array
     {
-        $isValid = true;
+        if (! $this->isSimulated()) {
+            $endpoint = rtrim($this->rpcUrl, '/');
+            if ($this->apiKey) {
+                $endpoint .= '/' . ltrim($this->apiKey, '/');
+            }
+
+            try {
+                $response = Http::withHeaders(['Content-Type' => 'application/json'])
+                    ->timeout(20)
+                    ->post($endpoint, [
+                        'jsonrpc' => '2.0',
+                        'method' => 'egov_verifyRecord',
+                        'params' => [$txHashOrRecordId],
+                        'id' => 1,
+                    ]);
+
+                if ($response->successful() && is_array($response->json())) {
+                    $json = $response->json();
+                    $json['simulated'] = false;
+
+                    return $json;
+                }
+            } catch (\Throwable $e) {
+                // fall through to the failure report below
+            }
+
+            return [
+                'jsonrpc' => '2.0',
+                'id' => 1,
+                'simulated' => false,
+                'error' => [
+                    'code' => -32603,
+                    'message' => 'eGovChain node could not verify this record.',
+                ],
+                'result' => ['verified' => false],
+            ];
+        }
+
+        // A hard-coded verified:true was meaningless here: nothing was ever
+        // submitted to a chain, so there is nothing to verify.
         return [
             'jsonrpc' => '2.0',
             'id' => 1,
             'result' => [
-                'verified' => $isValid,
-                'state' => 'ANCHORED_AND_VALIDATED',
+                'verified' => false,
+                'simulated' => true,
+                'state' => 'NOT_ANCHORED',
                 'contract' => $this->smartContractAddress,
-                'ledger_timestamp' => now()->toIso8601String(),
-                'tamper_evident' => true,
-                'node_signatures' => [
-                    'DICT_VALIDATOR_01' => '0x8f192b...',
-                    'DSWD_VALIDATOR_02' => '0x7a431c...',
-                    'DOH_VALIDATOR_03' => '0x99201a...',
-                ],
+                'ledger_timestamp' => null,
+                'tamper_evident' => false,
+                'chain_id' => $this->chainId,
+                'note' => 'No real ledger is configured; anchoring is simulated and cannot be verified on-chain.',
             ],
         ];
     }
@@ -135,7 +374,7 @@ class EGovChainService
         $params = $request['params'] ?? [];
         $id = $request['id'] ?? 1;
 
-        if (str_starts_with($this->rpcUrl, 'https://')) {
+        if (! $this->isSimulated()) {
             $endpoint = rtrim($this->rpcUrl, '/');
             if ($this->apiKey) {
                 $endpoint .= '/' . ltrim($this->apiKey, '/');
@@ -157,8 +396,25 @@ class EGovChainService
                         return $json;
                     }
                 }
+
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'error' => [
+                        'code' => -32603,
+                        'message' => "eGovChain node did not answer {$method}.",
+                    ],
+                ];
             } catch (\Throwable $e) {
-                // In case live request fails or times out, fall through to deterministic mock handlers
+                // Live mode must never fall through to canned data.
+                return [
+                    'jsonrpc' => '2.0',
+                    'id' => $id,
+                    'error' => [
+                        'code' => -32603,
+                        'message' => "eGovChain node unreachable for {$method}.",
+                    ],
+                ];
             }
         }
 
@@ -200,7 +456,7 @@ class EGovChainService
                 return [
                     'jsonrpc' => '2.0',
                     'id' => $id,
-                    'result' => '13371',
+                    'result' => $this->chainId,
                 ];
             case 'net_listening':
                 return [
@@ -233,10 +489,13 @@ class EGovChainService
 
             // --- ETH Chain / Gas ---
             case 'eth_chainId':
+                // Derived from config so it can no longer disagree with
+                // services.egov.chain.chain_id (it previously reported 0x343b /
+                // 13371 while config said 2026).
                 return [
                     'jsonrpc' => '2.0',
                     'id' => $id,
-                    'result' => '0x343b', // 13371
+                    'result' => '0x' . dechex((int) $this->chainId),
                 ];
             case 'eth_protocolVersion':
                 return [
@@ -406,8 +665,8 @@ class EGovChainService
                     'id' => $id,
                     'result' => [
                         'status' => 'active',
-                        'network' => 'Hyperledger Besu eGovChain',
-                        'chainId' => 13371,
+                        'network' => $this->ledgerLabel(),
+                        'chainId' => (int) $this->chainId,
                         'zero_fee' => true,
                     ],
                 ];
@@ -415,59 +674,72 @@ class EGovChainService
     }
 
 
+    /**
+     * Summarises an anchor result for storage. `chain_anchored` reflects what
+     * actually happened instead of being hard-coded true.
+     */
+    private function anchorMetadata(array $anchor, array $extra = []): array
+    {
+        return array_merge($extra, [
+            'chain_anchored' => (bool) ($anchor['anchored'] ?? false),
+            'ledger_simulated' => (bool) ($anchor['simulated'] ?? false),
+            'anchor_tx_hash' => $anchor['result']['transactionHash'] ?? null,
+        ]);
+    }
+
     public function anchorCaseTransition(MedicalCase $case, string $fromState, string $toState, ?User $actor, array $extraMeta = []): AuditEvent
     {
         $payloadHash = hash('sha256', json_encode(['case_id' => $case->id, 'from' => $fromState, 'to' => $toState, 'meta' => $extraMeta]));
-        $this->anchorRecordOnBesu('CASE-' . $case->id, $payloadHash, 'CASE_STATE_TRANSITION');
-        
+        $anchor = $this->anchorRecordOnBesu('CASE-' . $case->id, $payloadHash, 'CASE_STATE_TRANSITION');
+
         return $this->recordEvent(
-            $case, 
-            $actor, 
-            'STATE_TRANSITION', 
-            "Transitioned from {$fromState} to {$toState}", 
-            array_merge($extraMeta, ['chain_anchored' => true])
+            $case,
+            $actor,
+            'STATE_TRANSITION',
+            "Transitioned from {$fromState} to {$toState}",
+            $this->anchorMetadata($anchor, $extraMeta)
         );
     }
 
     public function anchorDocumentCertification(CaseDocument $doc, User $certifier): AuditEvent
     {
         $payloadHash = hash('sha256', json_encode(['document_id' => $doc->id, 'certifier_id' => $certifier->id]));
-        $this->anchorRecordOnBesu('DOC-' . $doc->id, $payloadHash, 'DOCUMENT_CERTIFICATION');
-        
+        $anchor = $this->anchorRecordOnBesu('DOC-' . $doc->id, $payloadHash, 'DOCUMENT_CERTIFICATION');
+
         return $this->recordEvent(
-            $doc->medicalCase, 
-            $certifier, 
-            'DOCUMENT_CERTIFIED', 
-            "Document {$doc->document_type} certified", 
-            ['document_id' => $doc->id, 'chain_anchored' => true]
+            $doc->medicalCase,
+            $certifier,
+            'DOCUMENT_CERTIFIED',
+            "Document {$doc->document_type} certified",
+            $this->anchorMetadata($anchor, ['document_id' => $doc->id])
         );
     }
 
     public function anchorGuaranteeLetter(GuaranteeLetter $gl, User $issuer): AuditEvent
     {
         $payloadHash = hash('sha256', json_encode(['gl_number' => $gl->gl_number, 'approved_amount' => $gl->approved_amount]));
-        $this->anchorRecordOnBesu('GL-' . $gl->id, $payloadHash, 'GUARANTEE_LETTER_ISSUANCE');
-        
+        $anchor = $this->anchorRecordOnBesu('GL-' . $gl->id, $payloadHash, 'GUARANTEE_LETTER_ISSUANCE');
+
         return $this->recordEvent(
-            $gl->medicalCase, 
-            $issuer, 
-            'GUARANTEE_LETTER_ISSUED', 
-            "Guarantee Letter {$gl->gl_number} issued for amount {$gl->approved_amount}", 
-            ['gl_number' => $gl->gl_number, 'approved_amount' => $gl->approved_amount, 'chain_anchored' => true]
+            $gl->medicalCase,
+            $issuer,
+            'GUARANTEE_LETTER_ISSUED',
+            "Guarantee Letter {$gl->gl_number} issued for amount {$gl->approved_amount}",
+            $this->anchorMetadata($anchor, ['gl_number' => $gl->gl_number, 'approved_amount' => $gl->approved_amount])
         );
     }
 
     public function anchorGuaranteeUtilization(GuaranteeUtilization $util, User $recorder): AuditEvent
     {
         $payloadHash = hash('sha256', json_encode(['utilization_id' => $util->id, 'amount' => $util->amount_utilized]));
-        $this->anchorRecordOnBesu('UTIL-' . $util->id, $payloadHash, 'GUARANTEE_UTILIZATION');
-        
+        $anchor = $this->anchorRecordOnBesu('UTIL-' . $util->id, $payloadHash, 'GUARANTEE_UTILIZATION');
+
         return $this->recordEvent(
-            $util->guaranteeLetter?->medicalCase, 
-            $recorder, 
-            'UTILIZATION_RECORDED', 
-            "Recorded utilization of {$util->amount_utilized}", 
-            ['utilization_id' => $util->id, 'amount' => $util->amount_utilized, 'chain_anchored' => true]
+            $util->guaranteeLetter?->medicalCase,
+            $recorder,
+            'UTILIZATION_RECORDED',
+            "Recorded utilization of {$util->amount_utilized}",
+            $this->anchorMetadata($anchor, ['utilization_id' => $util->id, 'amount' => $util->amount_utilized])
         );
     }
 }

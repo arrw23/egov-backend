@@ -25,7 +25,7 @@ class CompassBudgetService
             'limit' => 100,
         ], $params);
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/saaodb', $query);
@@ -65,7 +65,7 @@ class CompassBudgetService
 
     public function getSaaodbDashboard(int $reportYear = 2026, string $sheetScope = 'summary'): array
     {
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/saaodb/dashboard', [
@@ -122,7 +122,7 @@ class CompassBudgetService
             'sheetScope' => 'agency',
         ], $params);
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/saaodb/entities', $query);
@@ -159,7 +159,7 @@ class CompassBudgetService
             'limit' => 100,
         ], $params);
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/nca', $query);
@@ -197,7 +197,7 @@ class CompassBudgetService
             'limit' => 100,
         ], $params);
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/saro', $query);
@@ -236,7 +236,7 @@ class CompassBudgetService
             'limit' => 100,
         ], $params);
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/lgsf', $query);
@@ -277,7 +277,7 @@ class CompassBudgetService
             'limit' => 25,
         ], $params);
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/lgsf/dashboard', $query);
@@ -322,36 +322,81 @@ class CompassBudgetService
 
     public function getBudgetStatus(string $programCode = 'DSWD-AICS'): array
     {
-        if (str_starts_with($this->baseUrl, 'https://')) {
-            $dashboard = $this->getSaaodbDashboard(2026, 'summary');
-            if ($dashboard['status'] === 200 && isset($dashboard['data']['cascade'])) {
-                $cascade = $dashboard['data']['cascade'];
+        $utilizedAmount = $this->sumUtilizedGuarantees();
+
+        if (EGovMode::isLive()) {
+            // In live mode, report the DSWD entity's own figures. Previously
+            // the national ₱7.5T cascade was returned labelled as the DSWD
+            // program, which overstated the program's budget by orders of
+            // magnitude.
+            $records = $this->getSaaodbRecords([
+                'entityName' => 'Department of Social Welfare and Development',
+                'reportYear' => (int) now()->year,
+            ]);
+
+            $rows = $records['data']['data'] ?? [];
+
+            if ($records['status'] === 200 && ! empty($rows)) {
+                $row = $rows[0];
+                $allotments = (float) ($row['allotments'] ?? 0);
+                $obligations = (float) ($row['obligations'] ?? 0);
+                $unobligated = (float) ($row['unobligatedAllotments'] ?? ($allotments - $obligations));
+
                 return [
                     'program_code' => $programCode,
-                    'fund_source' => 'GAA 2026 General Appropriations Act (DBM Transparency Portal)',
-                    'total_allocation' => (float) ($cascade['totalAvailable'] ?? 7514252280701.64),
-                    'allotments' => (float) ($cascade['allotments'] ?? 5264033425281.64),
-                    'utilized_amount' => (float) ($cascade['obligations'] ?? 1523309434959.98),
-                    'remaining_balance' => (float) ($cascade['unobligated'] ?? 3740723990321.66),
-                    'disbursements' => (float) ($cascade['disbursements'] ?? 1211496810098.76),
-                    'compass_reference' => 'DBM-COMPASS-2026-LIVE-PORTAL',
+                    'fund_source' => 'GAA ' . now()->year . ' DSWD SAAODB (DBM Compass)',
+                    'entity_name' => $row['entityName'] ?? 'Department of Social Welfare and Development',
+                    'total_allocation' => $allotments,
+                    'allotments' => $allotments,
+                    'utilized_amount' => $utilizedAmount,
+                    'agency_obligations' => $obligations,
+                    'remaining_balance' => $unobligated,
+                    'disbursements' => (float) ($row['disbursements'] ?? 0),
+                    'compass_reference' => 'DBM-COMPASS-' . now()->year . '-DSWD-SAAODB',
                     'status' => 'Active · Funds Available',
+                    'source' => 'live',
                 ];
             }
+
+            return [
+                'program_code' => $programCode,
+                'fund_source' => 'GAA ' . now()->year . ' DSWD SAAODB (DBM Compass)',
+                'total_allocation' => null,
+                'utilized_amount' => $utilizedAmount,
+                'remaining_balance' => null,
+                'compass_reference' => 'DBM-COMPASS-' . now()->year . '-DSWD-SAAODB',
+                'status' => 'Unavailable · Compass lookup failed',
+                'source' => 'live',
+            ];
         }
 
         $totalAllocation = 20000000.00;
-        $utilizedAmount = GuaranteeLetter::where('status', 'active')->sum('approved_amount');
-        $remainingBalance = $totalAllocation - $utilizedAmount;
 
         return [
             'program_code' => $programCode,
-            'fund_source' => 'GAA 2026 DSWD AICS Budget Allocation',
+            'fund_source' => 'GAA ' . now()->year . ' DSWD AICS Budget Allocation (sandbox figures)',
             'total_allocation' => $totalAllocation,
             'utilized_amount' => $utilizedAmount,
-            'remaining_balance' => $remainingBalance,
-            'compass_reference' => 'DBM-COMPASS-2026-AICS-NCR',
+            'remaining_balance' => $totalAllocation - $utilizedAmount,
+            'compass_reference' => 'DBM-COMPASS-' . now()->year . '-AICS-NCR',
             'status' => 'Active · Funds Available',
+            'source' => 'sandbox',
         ];
+    }
+
+    /**
+     * Sum of issued guarantee letters that are still live.
+     *
+     * GL statuses are only valid / partially_utilized / fully_utilized; the
+     * previous where('status','active') never matched anything, so the utilizer
+     * figure was always ₱0.
+     */
+    private function sumUtilizedGuarantees(): float
+    {
+        return (float) GuaranteeLetter::whereIn('status', [
+            'valid',
+            'partially_utilized',
+            'fully_utilized',
+        ])->sum('approved_amount');
     }
 }

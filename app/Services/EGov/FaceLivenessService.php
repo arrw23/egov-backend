@@ -42,13 +42,13 @@ class FaceLivenessService
                 }
             }
         } catch (\Exception $e) {
-            if (str_starts_with($this->baseUrl, 'https://')) {
+            if (EGovMode::isLive()) {
                 return ['status' => 502, 'data' => ['message' => 'Face liveness service is unavailable.']];
             }
             // Fall through to resilient generated token
         }
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             return ['status' => $response->status(), 'data' => ['message' => 'Face liveness session creation failed.']];
         }
 
@@ -83,13 +83,13 @@ class FaceLivenessService
                 }
             }
         } catch (\Exception $e) {
-            if (str_starts_with($this->baseUrl, 'https://')) {
+            if (EGovMode::isLive()) {
                 return ['status' => 502, 'data' => ['message' => 'Face liveness service is unavailable.']];
             }
             // Fall through to resilient mock result
         }
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             return ['status' => $response->status(), 'data' => ['message' => 'Face liveness result retrieval failed.']];
         }
 

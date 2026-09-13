@@ -29,7 +29,7 @@ class EVerifyService
             ];
         }
 
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = Http::asJson()->timeout(15)->post(rtrim($this->baseUrl, '/') . '/api/auth', [
                 'client_id' => $clientId ?: $this->clientId,
                 'client_secret' => $clientSecret ?: $this->clientSecret,
@@ -55,9 +55,15 @@ class EVerifyService
 
     public function verifyDemographics(array $params, string $token = ''): array
     {
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = $this->liveRequest('/api/query', $params, $token);
-            if ($response !== null) return $response;
+            if ($response !== null) {
+                return $response;
+            }
+
+            // Live mode must never answer an identity query from canned data:
+            // the mock returns a "match" for any input.
+            return ['status' => 502, 'data' => ['message' => 'eVerify is unavailable.']];
         }
         $firstName = strtoupper($params['first_name'] ?? 'JUAN');
         $middleName = strtoupper($params['middle_name'] ?? 'SANTOS');
@@ -71,6 +77,10 @@ class EVerifyService
                 'code' => 'AAA000',
                 'token' => '268259975162549530929556586925358978',
                 'reference' => '3013490625984368',
+                // A real eVerify demographics match carries the PhilSys Card
+                // Number; without it the response cannot be treated as a
+                // verified identity.
+                'pcn' => '9639-9547-6266-4080',
                 'face_url' => 'https://ui-avatars.com/api/?name=JUAN+DELA+CRUZ&background=1e1b4b&color=fff',
                 'full_name' => trim("{$firstName} {$middleName} {$lastName} {$suffix}"),
                 'first_name' => $firstName,
@@ -114,9 +124,13 @@ class EVerifyService
 
     public function checkQr(string $qrValue, string $token = ''): array
     {
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = $this->liveRequest('/api/query/qr/check', ['value' => $qrValue], $token);
-            if ($response !== null) return $response;
+            if ($response !== null) {
+                return $response;
+            }
+
+            return ['status' => 502, 'data' => ['message' => 'eVerify QR lookup is unavailable.']];
         }
         if (empty($qrValue)) {
             return [
@@ -138,9 +152,13 @@ class EVerifyService
 
     public function verifyQr(string $qrValue, string $sessionId, string $token = ''): array
     {
-        if (str_starts_with($this->baseUrl, 'https://')) {
+        if (EGovMode::isLive()) {
             $response = $this->liveRequest('/api/query/qr', ['value' => $qrValue, 'face_liveness_session_id' => $sessionId], $token);
-            if ($response !== null) return $response;
+            if ($response !== null) {
+                return $response;
+            }
+
+            return ['status' => 502, 'data' => ['message' => 'eVerify QR verification is unavailable.']];
         }
         return [
             'status' => 200,
@@ -198,28 +216,53 @@ class EVerifyService
         return ['status' => $response->status(), 'data' => $response->json() ?: []];
     }
 
-    public function recordConsentAndVerify(User $user, bool $consentGiven): ApplicantProfile
+    /**
+     * Records PhilSys consent and stores the verified identity.
+     *
+     * $verified carries the actual eVerify response. Previously the PhilSys ID
+     * and birth date were hard-coded, so every citizen on the system was
+     * recorded as PSN-8192-3049-1829 born 1989-09-18 — a fabricated identity
+     * that could never match the person in front of the officer.
+     */
+    public function recordConsentAndVerify(User $user, bool $consentGiven, array $verified = []): ApplicantProfile
     {
         if (!$consentGiven) {
             throw new \InvalidArgumentException("Consent must be granted to proceed with PhilSys eVerify identity check.");
         }
 
-        $verificationRef = 'EVR-' . strtoupper(Str::random(4)) . '-' . rand(1000, 9999) . '-2026';
+        $data = $verified['data'] ?? [];
+        $meta = $verified['meta'] ?? [];
+
+        $philsysId = $data['pcn'] ?? $data['national_id']['pcn'] ?? $data['philsys_id'] ?? null;
+        $birthDate = $data['birth_date'] ?? null;
+        $fullName = $data['full_name'] ?? $user->name;
+
+        $reference = $data['reference'] ?? null;
+        $verificationRef = $reference
+            ? 'EVR-' . strtoupper($reference)
+            : 'EVR-' . strtoupper(Str::random(4)) . '-' . rand(1000, 9999) . '-' . now()->year;
+
+        // A successful eVerify response is required to claim "verified".
+        $verifiedOk = $data !== [] && ! empty($philsysId) && (
+            ($meta['result_grade'] ?? null) === 1
+            || ($data['code'] ?? null) === 'AAA000'
+            || ($data['code'] ?? null) === 'AAA001'
+        );
 
         $profile = ApplicantProfile::updateOrCreate(
             ['user_id' => $user->id],
             [
-                'philsys_id' => 'PSN-8192-3049-1829',
-                'full_name' => $user->name,
-                'birth_date' => '1989-09-18',
+                'philsys_id' => $philsysId,
+                'full_name' => $fullName,
+                'birth_date' => $birthDate,
                 'consent_given' => true,
                 'consent_timestamp' => now(),
                 'verification_reference' => $verificationRef,
-                'status' => 'verified',
+                'status' => $verifiedOk ? 'verified' : 'unverified',
             ]
         );
 
-        $user->verified_identity = true;
+        $user->verified_identity = $verifiedOk;
         $user->save();
 
         return $profile;
