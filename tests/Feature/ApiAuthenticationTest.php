@@ -51,6 +51,13 @@ class ApiAuthenticationTest extends TestCase
             'root ereport token' => ['post', '/api/integration/token'],
             'root compass budget' => ['get', '/api/compass/budget'],
             'root saaodb' => ['get', '/api/v1/records/saaodb'],
+            // Top-level api.php shims, outside the v1 group.
+            'root everify auth' => ['post', '/api/auth'],
+            'root everify query' => ['post', '/api/query'],
+            'root everify qr check' => ['post', '/api/query/qr/check'],
+            'egov ai assistant' => ['post', '/api/v1/egov/integration/ai_assistant/generate'],
+            'egov ai credits' => ['get', '/api/v1/egov/integration/credits'],
+            'egov ai document extractor' => ['post', '/api/v1/egov/integration/document_extractor/generate'],
         ];
     }
 

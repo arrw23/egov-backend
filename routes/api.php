@@ -17,31 +17,43 @@ use Illuminate\Support\Facades\Route;
 */
 
 // 1. eGov SSO -> /api/token & /api/partner/sso_authentication
+// Sign-in primitives: reachable without a token, since the caller does not
+// have one yet. The partner secret stays server-side.
 Route::post('/token', [EGovIntegrationController::class, 'ssoToken']);
 Route::post('/partner/sso_authentication', [EGovIntegrationController::class, 'ssoAuthentication']);
 
-// 2. eVerify -> /api/auth, /api/query, /api/query/qr/check, /api/query/qr
-Route::post('/auth', [EGovIntegrationController::class, 'eVerifyAuth']);
-Route::post('/query', [EGovIntegrationController::class, 'eVerifyQuery']);
-Route::post('/query/qr/check', [EGovIntegrationController::class, 'eVerifyQrCheck']);
-Route::post('/query/qr', [EGovIntegrationController::class, 'eVerifyQrVerify']);
+/*
+|--------------------------------------------------------------------------
+| Authenticated provider shims (root of /api)
+|--------------------------------------------------------------------------
+| These sit outside the v1 group and hold the server's provider credentials.
+| Left open, an anonymous caller could query PhilSys eVerify, spend eGov AI
+| credits, or push real SMS.
+*/
+Route::middleware('auth:sanctum')->group(function () {
+    // 2. eVerify -> /api/auth, /api/query, /api/query/qr/check, /api/query/qr
+    Route::post('/auth', [EGovIntegrationController::class, 'eVerifyAuth']);
+    Route::post('/query', [EGovIntegrationController::class, 'eVerifyQuery']);
+    Route::post('/query/qr/check', [EGovIntegrationController::class, 'eVerifyQrCheck']);
+    Route::post('/query/qr', [EGovIntegrationController::class, 'eVerifyQrVerify']);
 
-// 3. Face Liveness -> /api/v1/liveness/session & /api/v1/liveness/result/{sessionToken}
-Route::post('/v1/liveness/session', [EGovIntegrationController::class, 'createLivenessSession']);
-Route::get('/v1/liveness/result/{sessionToken}', [EGovIntegrationController::class, 'getLivenessResult']);
+    // 3. Face Liveness -> /api/v1/liveness/session & result/{sessionToken}
+    Route::post('/v1/liveness/session', [EGovIntegrationController::class, 'createLivenessSession']);
+    Route::get('/v1/liveness/result/{sessionToken}', [EGovIntegrationController::class, 'getLivenessResult']);
 
-// 4. eGov AI Integration Endpoints -> /api/v1/egov/integration/*
-Route::post('/v1/egov/integration/token', [EGovIntegrationController::class, 'aiToken']);
-Route::post('/v1/egov/integration/ai_assistant/generate', [EGovIntegrationController::class, 'aiAssistant']);
-Route::post('/v1/egov/integration/speech_maker/generate', [EGovIntegrationController::class, 'speechMaker']);
-Route::post('/v1/egov/integration/tourism/generate', [EGovIntegrationController::class, 'tourism']);
-Route::post('/v1/egov/integration/laws_and_regulations/generate', [EGovIntegrationController::class, 'lawsAndRegulations']);
-Route::post('/v1/egov/integration/translator/generate', [EGovIntegrationController::class, 'translator']);
-Route::post('/v1/egov/integration/document_extractor/generate', [EGovIntegrationController::class, 'documentExtractor']);
-Route::get('/v1/egov/integration/credits', [EGovIntegrationController::class, 'aiCredits']);
+    // 4. eGov AI Integration Endpoints -> /api/v1/egov/integration/*
+    Route::post('/v1/egov/integration/token', [EGovIntegrationController::class, 'aiToken']);
+    Route::post('/v1/egov/integration/ai_assistant/generate', [EGovIntegrationController::class, 'aiAssistant']);
+    Route::post('/v1/egov/integration/speech_maker/generate', [EGovIntegrationController::class, 'speechMaker']);
+    Route::post('/v1/egov/integration/tourism/generate', [EGovIntegrationController::class, 'tourism']);
+    Route::post('/v1/egov/integration/laws_and_regulations/generate', [EGovIntegrationController::class, 'lawsAndRegulations']);
+    Route::post('/v1/egov/integration/translator/generate', [EGovIntegrationController::class, 'translator']);
+    Route::post('/v1/egov/integration/document_extractor/generate', [EGovIntegrationController::class, 'documentExtractor']);
+    Route::get('/v1/egov/integration/credits', [EGovIntegrationController::class, 'aiCredits']);
 
-// 5. eMessage SMS Push -> /messaging/v1/sms/push
-Route::post('/messaging/v1/sms/push', [EGovIntegrationController::class, 'pushSms']);
+    // 5. eMessage SMS Push -> /api/messaging/v1/sms/push
+    Route::post('/messaging/v1/sms/push', [EGovIntegrationController::class, 'pushSms']);
+});
 
 
 /*
