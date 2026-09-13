@@ -41,6 +41,16 @@ class ApiAuthenticationTest extends TestCase
             'verify identity' => ['post', '/api/v1/identity/verify'],
             'emessage send' => ['post', '/api/v1/emessage/send'],
             'egov ai token' => ['post', '/api/v1/egov/sso/token'],
+            // Root-level provider shims in routes/web.php. These hold the
+            // server's provider credentials, so an anonymous caller could
+            // otherwise push real SMS or spend eGov AI credits.
+            'root sms push' => ['post', '/messaging/v1/sms/push'],
+            'root liveness session' => ['post', '/v1/liveness/session'],
+            'root liveness result' => ['get', '/v1/liveness/result/abc'],
+            'root pay transaction' => ['post', '/api/v1/transaction'],
+            'root ereport token' => ['post', '/api/integration/token'],
+            'root compass budget' => ['get', '/api/compass/budget'],
+            'root saaodb' => ['get', '/api/v1/records/saaodb'],
         ];
     }
 
@@ -127,5 +137,29 @@ class ApiAuthenticationTest extends TestCase
     {
         // The login page itself depends on this being reachable pre-sign-in.
         $this->getJson('/api/v1/egov/public-config')->assertStatus(200);
+    }
+
+    public function test_sso_sign_in_primitives_stay_reachable_without_a_token(): void
+    {
+        // These are part of the sign-in handshake: they cannot require a token
+        // the caller does not have yet. In sandbox the exchange succeeds; in
+        // live the provider rejects the code. Either way it must not be a 401.
+        $response = $this->postJson('/api/token', ['exchange_code' => 'nope']);
+
+        $this->assertNotSame(
+            401,
+            $response->status(),
+            'The sign-in token endpoint must not require a pre-existing token.'
+        );
+    }
+
+    public function test_root_provider_shims_reject_anonymous_callers(): void
+    {
+        $this->postJson('/messaging/v1/sms/push', [
+            'number' => '+639090000000',
+            'message' => 'should not send',
+        ])->assertStatus(401);
+
+        $this->postJson('/api/v1/transaction', ['amount' => 1000])->assertStatus(401);
     }
 }

@@ -29,38 +29,57 @@ Route::middleware([HandleCors::class])
     // The previous Route::options('/{any}') catch-all returned 200 but carried
     // no CORS headers, so the browser still blocked the real request.
 
-    Route::post('/v1/liveness/session', [EGovIntegrationController::class, 'createLivenessSession']);
-    Route::get('/v1/liveness/result/{sessionToken}', [EGovIntegrationController::class, 'getLivenessResult']);
+    /*
+    |----------------------------------------------------------------------
+    | SSO sign-in primitives (public)
+    |----------------------------------------------------------------------
+    | These are part of the sign-in handshake, so they cannot require a token
+    | that the caller does not have yet. The partner secret stays server-side
+    | and a valid single-use exchange code is still required.
+    */
     Route::post('/api/token', [EGovIntegrationController::class, 'ssoToken']);
     Route::post('/api/partner/sso_authentication', [EGovIntegrationController::class, 'ssoAuthentication']);
-    Route::post('/messaging/v1/sms/push', [EGovIntegrationController::class, 'pushSms']);
 
-    // eGovPay standard root routes
-    Route::post('/api/v1/transaction', [EGovIntegrationController::class, 'payCreateTransaction']);
-    Route::get('/api/v1/transaction/{uuid}', [EGovIntegrationController::class, 'payGetTransaction']);
-    Route::put('/api/v1/transaction/{uuid}/void', [EGovIntegrationController::class, 'payVoidTransaction']);
+    /*
+    |----------------------------------------------------------------------
+    | Authenticated provider shims
+    |----------------------------------------------------------------------
+    | These hold the server's provider credentials. Left open, anyone could
+    | push real SMS on the platform's eMessage account, spend eGov AI credits,
+    | or create eGovPay transactions.
+    */
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/v1/liveness/session', [EGovIntegrationController::class, 'createLivenessSession']);
+        Route::get('/v1/liveness/result/{sessionToken}', [EGovIntegrationController::class, 'getLivenessResult']);
+        Route::post('/messaging/v1/sms/push', [EGovIntegrationController::class, 'pushSms']);
 
-    // eReport standard root routes
-    Route::post('/api/integration/token', [EGovIntegrationController::class, 'ereportToken']);
-    Route::get('/api/integration/datasets/report_types', [EGovIntegrationController::class, 'ereportReportTypes']);
-    Route::get('/api/integration/datasets/regions', [EGovIntegrationController::class, 'ereportRegions']);
-    Route::get('/api/integration/datasets/provinces', [EGovIntegrationController::class, 'ereportProvinces']);
-    Route::get('/api/integration/datasets/municipalities', [EGovIntegrationController::class, 'ereportMunicipalities']);
-    Route::get('/api/integration/datasets/barangays', [EGovIntegrationController::class, 'ereportBarangays']);
-    Route::post('/api/integration/submit_complaint', [EGovIntegrationController::class, 'ereportSubmitComplaint']);
-    Route::post('/api/integration/verify/request', [EGovIntegrationController::class, 'ereportVerifyRequest']);
-    Route::post('/api/integration/verify/confirm', [EGovIntegrationController::class, 'ereportVerifyConfirm']);
-    Route::get('/api/integration/reports', [EGovIntegrationController::class, 'ereportReports']);
-    Route::get('/api/integration/reports/{case_number}', [EGovIntegrationController::class, 'ereportViewReport']);
+        // eGovPay standard root routes
+        Route::post('/api/v1/transaction', [EGovIntegrationController::class, 'payCreateTransaction']);
+        Route::get('/api/v1/transaction/{uuid}', [EGovIntegrationController::class, 'payGetTransaction']);
+        Route::put('/api/v1/transaction/{uuid}/void', [EGovIntegrationController::class, 'payVoidTransaction']);
 
-    // DBM Compass standard root routes
-    Route::get('/api/v1/records/saaodb', [EGovIntegrationController::class, 'compassSaaodb']);
-    Route::get('/api/v1/records/saaodb/dashboard', [EGovIntegrationController::class, 'compassSaaodbDashboard']);
-    Route::get('/api/v1/records/saaodb/entities', [EGovIntegrationController::class, 'compassSaaodbEntities']);
-    Route::get('/api/v1/records/nca', [EGovIntegrationController::class, 'compassNca']);
-    Route::get('/api/v1/records/saro', [EGovIntegrationController::class, 'compassSaro']);
-    Route::get('/api/v1/records/lgsf', [EGovIntegrationController::class, 'compassLgsf']);
-    Route::get('/api/v1/records/lgsf/dashboard', [EGovIntegrationController::class, 'compassLgsfDashboard']);
-    Route::get('/api/compass/budget', [EGovIntegrationController::class, 'compassBudget']);
-    Route::get('/api/v1/compass/budget', [EGovIntegrationController::class, 'compassBudget']);
+        // eReport standard root routes
+        Route::post('/api/integration/token', [EGovIntegrationController::class, 'ereportToken']);
+        Route::get('/api/integration/datasets/report_types', [EGovIntegrationController::class, 'ereportReportTypes']);
+        Route::get('/api/integration/datasets/regions', [EGovIntegrationController::class, 'ereportRegions']);
+        Route::get('/api/integration/datasets/provinces', [EGovIntegrationController::class, 'ereportProvinces']);
+        Route::get('/api/integration/datasets/municipalities', [EGovIntegrationController::class, 'ereportMunicipalities']);
+        Route::get('/api/integration/datasets/barangays', [EGovIntegrationController::class, 'ereportBarangays']);
+        Route::post('/api/integration/submit_complaint', [EGovIntegrationController::class, 'ereportSubmitComplaint']);
+        Route::post('/api/integration/verify/request', [EGovIntegrationController::class, 'ereportVerifyRequest']);
+        Route::post('/api/integration/verify/confirm', [EGovIntegrationController::class, 'ereportVerifyConfirm']);
+        Route::get('/api/integration/reports', [EGovIntegrationController::class, 'ereportReports']);
+        Route::get('/api/integration/reports/{case_number}', [EGovIntegrationController::class, 'ereportViewReport']);
+
+        // DBM Compass standard root routes
+        Route::get('/api/v1/records/saaodb', [EGovIntegrationController::class, 'compassSaaodb']);
+        Route::get('/api/v1/records/saaodb/dashboard', [EGovIntegrationController::class, 'compassSaaodbDashboard']);
+        Route::get('/api/v1/records/saaodb/entities', [EGovIntegrationController::class, 'compassSaaodbEntities']);
+        Route::get('/api/v1/records/nca', [EGovIntegrationController::class, 'compassNca']);
+        Route::get('/api/v1/records/saro', [EGovIntegrationController::class, 'compassSaro']);
+        Route::get('/api/v1/records/lgsf', [EGovIntegrationController::class, 'compassLgsf']);
+        Route::get('/api/v1/records/lgsf/dashboard', [EGovIntegrationController::class, 'compassLgsfDashboard']);
+        Route::get('/api/compass/budget', [EGovIntegrationController::class, 'compassBudget']);
+        Route::get('/api/v1/compass/budget', [EGovIntegrationController::class, 'compassBudget']);
+    });
 });
