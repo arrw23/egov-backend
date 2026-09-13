@@ -50,7 +50,13 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive() && $authToken) {
+        if (EGovMode::isLive()) {
+            if (! $authToken) {
+                // Live mode must not fall through to canned data just because
+                // no token is available.
+                return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
+            }
+
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/datasets/report_types');
@@ -79,7 +85,10 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive() && $authToken) {
+        if (EGovMode::isLive()) {
+            if (! $authToken) {
+                return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
+            }
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/datasets/regions');
@@ -107,7 +116,10 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive() && $authToken) {
+        if (EGovMode::isLive()) {
+            if (! $authToken) {
+                return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
+            }
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/datasets/provinces', [
@@ -136,7 +148,10 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive() && $authToken) {
+        if (EGovMode::isLive()) {
+            if (! $authToken) {
+                return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
+            }
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/datasets/municipalities', [
@@ -165,7 +180,10 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive() && $authToken) {
+        if (EGovMode::isLive()) {
+            if (! $authToken) {
+                return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
+            }
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/datasets/barangays', [
@@ -212,7 +230,10 @@ class EReportService
             'longitude' => $payload['longitude'] ?? '120.98',
         ]);
 
-        if (EGovMode::isLive() && $authToken) {
+        if (EGovMode::isLive()) {
+            if (! $authToken) {
+                return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
+            }
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
                 'Content-Type' => 'application/json',
@@ -239,7 +260,10 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive() && $authToken) {
+        if (EGovMode::isLive()) {
+            if (! $authToken) {
+                return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
+            }
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
                 'Content-Type' => 'application/json',
@@ -267,7 +291,10 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive() && $authToken) {
+        if (EGovMode::isLive()) {
+            if (! $authToken) {
+                return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
+            }
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$authToken}",
                 'Content-Type' => 'application/json',
@@ -392,9 +419,15 @@ class EReportService
             return $this->submitComplaint(array_merge($payload, ['subject' => $action]));
         }
 
+        // Nothing was filed with eReport. Reporting status "logged" alongside a
+        // freshly-invented EREPORT- id made a local audit entry look like a
+        // government filing, so say plainly that it was not submitted.
         return [
-            'status' => 'logged',
-            'report_id' => 'EREPORT-' . strtoupper(substr(md5($action . time()), 0, 8)),
+            'status' => 'not_submitted',
+            'submitted' => false,
+            'reason' => EGovMode::isLive()
+                ? 'EGOV_ENABLE_LIVE_MUTATIONS is off; the report was not filed with eReport.'
+                : 'Sandbox mode; the report was not filed with eReport.',
             'action' => $action,
             'timestamp' => now()->toIso8601String(),
             'actor_name' => $actor ? $actor->name : 'System',

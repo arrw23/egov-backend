@@ -183,19 +183,28 @@ class EGovAIService
 
     public function documentExtractor($file = null): array
     {
-        if (EGovMode::isLive() && $file) {
-            $token = $this->requestLiveToken();
-            if ($token) {
-                $response = Http::withToken($token)->timeout(30)->attach('file', fopen($file->getRealPath(), 'r'), $file->getClientOriginalName())
-                    ->post(rtrim($this->baseUrl, '/') . '/api/v1/egov/integration/document_extractor/generate');
-                if ($response->successful()) return ['status' => $response->status(), 'data' => $response->json() ?: []];
-                return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eGov AI document extraction failed.']];
+        if (EGovMode::isLive()) {
+            if (! $file) {
+                return ['status' => 422, 'data' => ['message' => 'A file is required for document extraction.']];
             }
+
+            $token = $this->requestLiveToken();
+            if (! $token) {
+                // Live mode must not substitute a canned extraction.
+                return ['status' => 503, 'data' => ['message' => 'eGov AI is not configured.']];
+            }
+
+            $response = Http::withToken($token)->timeout(30)->attach('file', fopen($file->getRealPath(), 'r'), $file->getClientOriginalName())
+                ->post(rtrim($this->baseUrl, '/') . '/api/v1/egov/integration/document_extractor/generate');
+            if ($response->successful()) return ['status' => $response->status(), 'data' => $response->json() ?: []];
+            return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eGov AI document extraction failed.']];
         }
+
         return [
             'status' => 200,
             'data' => [
                 'data' => "Here's the information extracted from the image:<br><br><b>Document Type:</b> Philippine Driver's License / Official Medical Document<br><b>Issuing Authority:</b> REPUBLIC OF THE PHILIPPINES<br><b>License Number:</b> N01-18-928491<br><b>Full Name:</b> JOSIE SANTOS DELA CRUZ<br><b>Expiry Date:</b> 2030-08-29",
+                'sandbox' => true,
             ],
         ];
     }
