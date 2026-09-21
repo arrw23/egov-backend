@@ -171,11 +171,13 @@ class EGovIntegrationController extends Controller
         return response()->json($res['data'], $res['status']);
     }
 
-    public function aiCredits(Request $request, EGovAIService $ai): JsonResponse
+    public function aiCredits(EGovAIService $ai): JsonResponse
     {
-        $authHeader = $request->header('Authorization', '');
-        $token = str_starts_with($authHeader, 'Bearer ') ? substr($authHeader, 7) : null;
-        $res = $ai->credits($token);
+        // The caller's Sanctum bearer authenticates this app only. Passing it to
+        // eGov leaked session tokens to a third party and guaranteed a 401,
+        // because upstream only accepts the AI access token it issued itself.
+        $res = $ai->credits();
+
         return response()->json($res['data'], $res['status']);
     }
 

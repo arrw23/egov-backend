@@ -4,10 +4,17 @@ namespace App\Services\EGov;
 
 use App\Models\MedicalCase;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class EGovAIService
 {
+    /**
+     * Upstream meters credits per access token, so minting one per call kept
+     * the usage counter pinned at zero. One token is reused for its lifetime.
+     */
+    private const TOKEN_CACHE_KEY = 'egov_ai_access_token';
+
     protected ?string $accessCode;
     protected string $baseUrl;
 
@@ -28,7 +35,7 @@ class EGovAIService
         }
 
         if (EGovMode::isLive()) {
-            $response = Http::asJson()->timeout(20)->post(rtrim($this->baseUrl, '/') . '/api/v1/egov/integration/token', [
+            $response = Http::asJson()->timeout(20)->post($this->endpoint('/api/v1/egov/integration/token'), [
                 'access_code' => $code,
             ]);
             return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eGov AI returned an empty response.']];
@@ -41,18 +48,33 @@ class EGovAIService
                 'expires_in_seconds' => 28800,
                 'credits_total' => 200,
                 'credits_remaining' => 200,
+                'source' => 'sandbox',
+                'simulated' => true,
             ],
         ];
     }
 
-    public function credits(?string $token = null): array
+    /**
+     * Reads the account's credit balance. It deliberately takes no bearer: the
+     * caller's Sanctum token authenticates *this app* and must never be
+     * forwarded to a third-party government API.
+     */
+    public function credits(): array
     {
         if (EGovMode::isLive()) {
-            $bearer = $token ?: $this->requestLiveToken();
-            if ($bearer) {
-                $response = Http::withToken($bearer)->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/egov/integration/credits');
-                return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eGov AI credits response empty.']];
+            $bearer = $this->requestLiveToken();
+            if (! $bearer) {
+                return ['status' => 503, 'data' => ['message' => 'eGov AI is not configured.']];
             }
+
+            $response = Http::withToken($bearer)->timeout(20)->get($this->endpoint('/api/v1/egov/integration/credits'));
+            $data = $response->json();
+
+            if ($response->successful() && is_array($data)) {
+                return ['status' => 200, 'data' => $data + ['source' => 'live_egov_ai', 'simulated' => false]];
+            }
+
+            return ['status' => $response->status(), 'data' => $data ?: ['message' => 'eGov AI credits response empty.']];
         }
 
         return [
@@ -62,6 +84,8 @@ class EGovAIService
                 'credits_used' => 1,
                 'credits_remaining' => 199,
                 'expires_at' => now()->addDays(2)->toIso8601String(),
+                'source' => 'sandbox',
+                'simulated' => true,
             ],
         ];
     }
@@ -194,10 +218,26 @@ class EGovAIService
                 return ['status' => 503, 'data' => ['message' => 'eGov AI is not configured.']];
             }
 
-            $response = Http::withToken($token)->timeout(30)->attach('file', fopen($file->getRealPath(), 'r'), $file->getClientOriginalName())
-                ->post(rtrim($this->baseUrl, '/') . '/api/v1/egov/integration/document_extractor/generate');
-            if ($response->successful()) return ['status' => $response->status(), 'data' => $response->json() ?: []];
-            return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eGov AI document extraction failed.']];
+            $response = Http::withToken($token)->timeout(30)
+                ->attach('file', $file->get(), $file->getClientOriginalName())
+                ->post($this->endpoint('/api/v1/egov/integration/document_extractor/generate'));
+
+            $data = $response->json();
+
+            if ($response->successful() && is_array($data)) {
+                return ['status' => $response->status(), 'data' => $data];
+            }
+
+            $data = is_array($data) && $data !== [] ? $data : ['message' => 'eGov AI document extraction failed.'];
+
+            if (($data['code'] ?? null) === 'E_INVALID_MULTIPART_REQUEST') {
+                // Verified against the live provider: its parser rejects every
+                // well-formed multipart body (png/jpeg/pdf, any field name), so
+                // no client-side shape can make this call succeed.
+                $data['hint'] = 'Upstream defect: the eGov AI document extractor rejects all multipart uploads. OCR is unavailable until eGov fixes the endpoint.';
+            }
+
+            return ['status' => $response->status(), 'data' => $data];
         }
 
         return [
@@ -205,23 +245,64 @@ class EGovAIService
             'data' => [
                 'data' => "Here's the information extracted from the image:<br><br><b>Document Type:</b> Philippine Driver's License / Official Medical Document<br><b>Issuing Authority:</b> REPUBLIC OF THE PHILIPPINES<br><b>License Number:</b> N01-18-928491<br><b>Full Name:</b> JOSIE SANTOS DELA CRUZ<br><b>Expiry Date:</b> 2030-08-29",
                 'sandbox' => true,
+                'simulated' => true,
             ],
         ];
     }
 
+    private function endpoint(string $path): string
+    {
+        return rtrim($this->baseUrl, '/') . $path;
+    }
+
     private function livePost(string $path, array $payload): ?array
     {
-        if (!EGovMode::isLive()) return null;
+        if (! EGovMode::isLive()) return null;
+
         $token = $this->requestLiveToken();
-        if (!$token) return ['status' => 401, 'data' => ['message' => 'eGov AI token generation failed.']];
-        $response = Http::asJson()->withToken($token)->timeout(30)->post(rtrim($this->baseUrl, '/') . $path, $payload);
+        if (! $token) return ['status' => 503, 'data' => ['message' => 'eGov AI is not configured.']];
+
+        $response = $this->postWithToken($path, $payload, $token);
+
+        if ($response->status() === 401) {
+            // Upstream can retire a token before its stated expiry; one fresh
+            // mint beats surfacing a spurious failure to the caller.
+            $token = $this->mintLiveToken();
+            if ($token) $response = $this->postWithToken($path, $payload, $token);
+        }
+
         return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eGov AI returned an empty response.']];
+    }
+
+    private function postWithToken(string $path, array $payload, string $token)
+    {
+        return Http::asJson()->withToken($token)->timeout(30)->post($this->endpoint($path), $payload);
     }
 
     private function requestLiveToken(): ?string
     {
-        $response = Http::asJson()->timeout(20)->post(rtrim($this->baseUrl, '/') . '/api/v1/egov/integration/token', ['access_code' => $this->accessCode]);
-        return $response->successful() ? ($response->json('access_token') ?: $response->json('data.access_token')) : null;
+        $cached = Cache::get(self::TOKEN_CACHE_KEY);
+        if (is_string($cached) && $cached !== '') return $cached;
+
+        return $this->mintLiveToken();
+    }
+
+    private function mintLiveToken(): ?string
+    {
+        if (empty($this->accessCode)) return null;
+
+        $response = Http::asJson()->timeout(20)->post($this->endpoint('/api/v1/egov/integration/token'), [
+            'access_code' => $this->accessCode,
+        ]);
+        if (! $response->successful()) return null;
+
+        $token = $response->json('access_token') ?: $response->json('data.access_token');
+        if (! is_string($token) || $token === '') return null;
+
+        // Refresh five minutes early so a token is never used on its boundary.
+        Cache::put(self::TOKEN_CACHE_KEY, $token, max(60, (int) ($response->json('expires_in_seconds') ?: 28800) - 300));
+
+        return $token;
     }
 
     public function classifyAndExtract(string $fileName, string $docType, $file = null): array
@@ -240,41 +321,65 @@ class EGovAIService
         $extractedData = [
             'document_name' => $fileName,
             'extracted_at' => now()->toIso8601String(),
-            'disclaimer' => 'AI-generated extraction — subject to authorized staff review.',
         ];
 
-        // Sandbox/mock classification is a label lookup, not a real model
-        // inference, so it must not claim 0.98 confidence.
+        // The label above comes from the upload metadata, not from a model, so it
+        // carries no confidence figure and is never reported as inference.
         $confidence = null;
+        $aiAnalysis = null;
         $source = 'sandbox_classifier';
 
-        if ($file !== null) {
-            if (EGovMode::isLive()) {
+        $extraction = ['status' => 'not_attempted', 'provider' => 'egov_ai_document_extractor'];
+
+        if (EGovMode::isLive()) {
+            if ($file !== null) {
                 $result = $this->documentExtractor($file);
 
-                if (($result['status'] ?? 500) !== 200) {
-                    return [
-                        'classified_type' => $type,
-                        'confidence' => null,
-                        'source' => 'live_document_extractor',
-                        'error' => $result['data']['message'] ?? 'eGov AI document extraction failed.',
-                        'extracted_data' => $extractedData,
-                    ];
+                if (($result['status'] ?? 500) === 200) {
+                    $extractedData['ai_output'] = $result['data']['data'] ?? $result['data'];
+                    $confidence = $result['data']['confidence'] ?? null;
+                    $extraction = ['status' => 'ok', 'provider' => 'egov_ai_document_extractor'];
+                    $source = 'live_document_extractor';
+                } else {
+                    $extraction = [
+                        'status' => 'unavailable',
+                        'provider' => 'egov_ai_document_extractor',
+                        'message' => $result['data']['message'] ?? 'eGov AI document extraction failed.',
+                    ] + (isset($result['data']['hint']) ? ['hint' => $result['data']['hint']] : []);
                 }
-
-                $extractedData['ai_output'] = $result['data']['data'] ?? $result['data'];
-                $confidence = $result['data']['confidence'] ?? null;
-                $source = 'live_document_extractor';
-            } else {
-                $extractedData['note'] = 'Sandbox mode: no AI provider was called; the document type was inferred from the upload metadata.';
             }
+
+            // OCR may be unavailable, but the assistant endpoint works, so the
+            // reviewer guidance is model output rather than a canned template.
+            $ai = $this->livePost('/api/v1/egov/integration/ai_assistant/generate', [
+                'prompt' => "A document in a Philippine medical assistance application is labelled \"{$type}\" and filed as \"{$fileName}\". "
+                    . "Field-level OCR of the file is unavailable, so do not invent or guess its contents. In at most three sentences, "
+                    . "list the specific data elements an evaluator must confirm on this document type before certifying it, and name the "
+                    . "most common reason such a document is rejected.",
+                'category' => 'PH',
+            ]);
+
+            $narrative = $ai['data']['data'] ?? null;
+            if (($ai['status'] ?? 500) === 200 && is_string($narrative) && $narrative !== '') {
+                $aiAnalysis = $narrative;
+                if ($source === 'sandbox_classifier') $source = 'live_ai_assistant';
+            }
+        } else {
+            $extractedData['note'] = 'Sandbox mode: no AI provider was called; the document type was inferred from the upload metadata.';
         }
+
+        $extractedData['disclaimer'] = $aiAnalysis !== null
+            ? 'AI-generated guidance — subject to authorized staff review.'
+            : 'Classified from upload metadata; no AI provider result was available for this document.';
 
         return [
             'classified_type' => $type,
             'confidence' => $confidence,
             'source' => $source,
+            'ai_analysis' => $aiAnalysis,
+            'extraction' => $extraction,
             'extracted_data' => $extractedData,
+            'disclaimer' => $extractedData['disclaimer'],
         ];
     }
 

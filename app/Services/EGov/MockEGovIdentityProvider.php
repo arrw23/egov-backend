@@ -20,7 +20,7 @@ class MockEGovIdentityProvider implements EGovIdentityProvider
             'mobile' => '+639090000000',
             'address' => '1123 RIZAL ST., POBLACION, CITY OF ALAMINOS, PANGASINAN, PHILIPPINES',
         ],
-        'hospital' => [
+        'hospital_staff' => [
             'sub' => 'egov-sub-hospital-ana-002',
             'name' => 'Dr. Ana Reyes',
             'email' => 'ana.reyes@manilageneral.ph',
@@ -28,7 +28,7 @@ class MockEGovIdentityProvider implements EGovIdentityProvider
             'org_code' => 'MGH-MANILA',
             'verified' => true,
         ],
-        'agency' => [
+        'agency_evaluator' => [
             'sub' => 'egov-sub-agency-miguel-003',
             'name' => 'Miguel dela Cruz',
             'email' => 'miguel.delacruz@dswd.gov.ph',
@@ -38,6 +38,29 @@ class MockEGovIdentityProvider implements EGovIdentityProvider
         ],
     ];
 
+    /**
+     * The UI sends the short forms below, the documented REST API the canonical
+     * role names. Without this map a caller asking for "agency_evaluator" fell
+     * through to the applicant account and never reached the agency portal.
+     */
+    protected const ROLE_ALIASES = [
+        'hospital' => 'hospital_staff',
+        'hospital_staff' => 'hospital_staff',
+        'agency' => 'agency_evaluator',
+        'agency_evaluator' => 'agency_evaluator',
+        'applicant' => 'applicant',
+    ];
+
+    private function canonicalRole(string $roleHint): string
+    {
+        return self::ROLE_ALIASES[strtolower(trim($roleHint))] ?? 'applicant';
+    }
+
+    private function accountFor(string $roleHint): array
+    {
+        return $this->mockAccounts[$this->canonicalRole($roleHint)];
+    }
+
     public function authorizationUrl(string $roleHint = 'applicant'): string
     {
         return "/api/v1/auth/egov/callback?code=mock_code_" . urlencode($roleHint);
@@ -45,15 +68,13 @@ class MockEGovIdentityProvider implements EGovIdentityProvider
 
     public function exchangeCode(string $code): array
     {
-        $roleHint = str_replace('mock_code_', '', urldecode($code));
-        if (!isset($this->mockAccounts[$roleHint])) {
-            $roleHint = 'applicant';
-        }
+        $roleHint = $this->canonicalRole(str_replace('mock_code_', '', urldecode($code)));
+        $profile = $this->mockAccounts[$roleHint];
 
         return [
             'access_token' => 'mock_token_' . md5($roleHint),
-            'sub' => $this->mockAccounts[$roleHint]['sub'],
-            'profile' => $this->mockAccounts[$roleHint],
+            'sub' => $profile['sub'],
+            'profile' => $profile,
         ];
     }
 
@@ -80,7 +101,7 @@ class MockEGovIdentityProvider implements EGovIdentityProvider
 
     public function resolveUser(string $roleHint): User
     {
-        $profile = $this->mockAccounts[$roleHint] ?? $this->mockAccounts['applicant'];
+        $profile = $this->accountFor($roleHint);
 
         $orgId = null;
         if (!empty($profile['org_code'])) {
