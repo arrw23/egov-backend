@@ -24,7 +24,7 @@ class EReportService
     {
         $code = $accessCode ?: $this->accessCode;
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('report')) {
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
             ])->timeout(20)->post(rtrim($this->baseUrl, '/') . '/api/integration/token', [
@@ -50,7 +50,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('report')) {
             if (! $authToken) {
                 // Live mode must not fall through to canned data just because
                 // no token is available.
@@ -85,7 +85,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('report')) {
             if (! $authToken) {
                 return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
             }
@@ -116,7 +116,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('report')) {
             if (! $authToken) {
                 return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
             }
@@ -148,7 +148,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('report')) {
             if (! $authToken) {
                 return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
             }
@@ -180,7 +180,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('report')) {
             if (! $authToken) {
                 return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
             }
@@ -230,7 +230,7 @@ class EReportService
             'longitude' => $payload['longitude'] ?? '120.98',
         ]);
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('report')) {
             if (! $authToken) {
                 return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
             }
@@ -260,7 +260,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('report')) {
             if (! $authToken) {
                 return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
             }
@@ -291,7 +291,7 @@ class EReportService
     {
         $authToken = $token ?: $this->accessToken;
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('report')) {
             if (! $authToken) {
                 return ['status' => 503, 'data' => ['message' => 'eReport is not configured.']];
             }
@@ -321,7 +321,7 @@ class EReportService
 
     public function getReports(string $viewToken, array $params = []): array
     {
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('report')) {
             $response = Http::withHeaders([
                 'X-EReport-View-Token' => $viewToken,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/reports', $params);
@@ -370,7 +370,7 @@ class EReportService
 
     public function getReportByCaseNumber(string $caseNumber, string $viewToken): array
     {
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('report')) {
             $response = Http::withHeaders([
                 'X-EReport-View-Token' => $viewToken,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/integration/reports/' . $caseNumber);
@@ -415,7 +415,7 @@ class EReportService
 
     public function submitAuditReport(string $action, array $payload, ?User $actor = null): array
     {
-        if (EGovMode::isLive() && config('services.egov.live_mutations')) {
+        if (EGovMode::isLive('report') && config('services.egov.live_mutations')) {
             return $this->submitComplaint(array_merge($payload, ['subject' => $action]));
         }
 
@@ -425,7 +425,7 @@ class EReportService
         return [
             'status' => 'not_submitted',
             'submitted' => false,
-            'reason' => EGovMode::isLive()
+            'reason' => EGovMode::isLive('report')
                 ? 'EGOV_ENABLE_LIVE_MUTATIONS is off; the report was not filed with eReport.'
                 : 'Sandbox mode; the report was not filed with eReport.',
             'action' => $action,

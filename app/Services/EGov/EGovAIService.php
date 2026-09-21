@@ -34,7 +34,7 @@ class EGovAIService
             ];
         }
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('ai')) {
             $response = Http::asJson()->timeout(20)->post($this->endpoint('/api/v1/egov/integration/token'), [
                 'access_code' => $code,
             ]);
@@ -61,7 +61,7 @@ class EGovAIService
      */
     public function credits(): array
     {
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('ai')) {
             $bearer = $this->requestLiveToken();
             if (! $bearer) {
                 return ['status' => 503, 'data' => ['message' => 'eGov AI is not configured.']];
@@ -207,7 +207,7 @@ class EGovAIService
 
     public function documentExtractor($file = null): array
     {
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('ai')) {
             if (! $file) {
                 return ['status' => 422, 'data' => ['message' => 'A file is required for document extraction.']];
             }
@@ -257,7 +257,7 @@ class EGovAIService
 
     private function livePost(string $path, array $payload): ?array
     {
-        if (! EGovMode::isLive()) return null;
+        if (! EGovMode::isLive('ai')) return null;
 
         $token = $this->requestLiveToken();
         if (! $token) return ['status' => 503, 'data' => ['message' => 'eGov AI is not configured.']];
@@ -331,7 +331,7 @@ class EGovAIService
 
         $extraction = ['status' => 'not_attempted', 'provider' => 'egov_ai_document_extractor'];
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('ai')) {
             if ($file !== null) {
                 $result = $this->documentExtractor($file);
 
@@ -474,7 +474,7 @@ class EGovAIService
             empty($missing) ? '' : '. Outstanding: ' . implode(', ', $missing)
         );
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('ai')) {
             $prompt = 'Summarise this medical assistance case for an evaluator, using only these facts: '
                 . json_encode($facts, JSON_UNESCAPED_SLASHES);
             $ai = $this->livePost('/api/v1/egov/integration/ai_assistant/generate', [

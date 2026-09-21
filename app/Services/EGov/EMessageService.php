@@ -26,7 +26,7 @@ class EMessageService
      */
     public function pushSms(string $number, string $message): array
     {
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('emessage')) {
             try {
                 $response = Http::withHeaders([
                     'X-EMESSAGE-Auth' => $this->apiToken,

@@ -29,7 +29,7 @@ class EVerifyService
             ];
         }
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('everify')) {
             $response = Http::asJson()->timeout(15)->post(rtrim($this->baseUrl, '/') . '/api/auth', [
                 'client_id' => $clientId ?: $this->clientId,
                 'client_secret' => $clientSecret ?: $this->clientSecret,
@@ -55,7 +55,7 @@ class EVerifyService
 
     public function verifyDemographics(array $params, string $token = ''): array
     {
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('everify')) {
             $response = $this->liveRequest('/api/query', $params, $token);
             if ($response !== null) {
                 return $response;
@@ -124,7 +124,7 @@ class EVerifyService
 
     public function checkQr(string $qrValue, string $token = ''): array
     {
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('everify')) {
             $response = $this->liveRequest('/api/query/qr/check', ['value' => $qrValue], $token);
             if ($response !== null) {
                 return $response;
@@ -152,7 +152,7 @@ class EVerifyService
 
     public function verifyQr(string $qrValue, string $sessionId, string $token = ''): array
     {
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('everify')) {
             $response = $this->liveRequest('/api/query/qr', ['value' => $qrValue, 'face_liveness_session_id' => $sessionId], $token);
             if ($response !== null) {
                 return $response;

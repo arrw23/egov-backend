@@ -40,6 +40,22 @@ return [
         // Explicit sandbox|live switch. Anything other than 'live' is treated
         // as sandbox, where canned responses are allowed. See EGovMode.
         'mode' => env('EGOV_MODE', 'sandbox'),
+
+        // Per-provider override of the switch above. Left unset a provider
+        // inherits EGOV_MODE; set it to sandbox or live to pin that one
+        // provider. EGOV_MODE=live with EGOV_SSO_MODE=sandbox is the demo
+        // configuration: real AI, replayable sign-in.
+        'modes' => [
+            'sso' => env('EGOV_SSO_MODE'),
+            'everify' => env('EGOV_EVERIFY_MODE'),
+            'ai' => env('EGOV_AI_MODE'),
+            'pay' => env('EGOV_PAY_MODE'),
+            'emessage' => env('EGOV_EMESSAGE_MODE'),
+            'report' => env('EGOV_REPORT_MODE'),
+            'face_liveness' => env('EGOV_FACE_LIVENESS_MODE'),
+            'chain' => env('EGOV_CHAIN_MODE'),
+            'compass' => env('EGOV_COMPASS_MODE'),
+        ],
         'sso' => [
             'partner_code' => env('EGOV_SSO_PARTNER_CODE'),
             'partner_secret' => env('EGOV_SSO_PARTNER_SECRET'),

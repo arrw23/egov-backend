@@ -42,13 +42,13 @@ class FaceLivenessService
                 }
             }
         } catch (\Exception $e) {
-            if (EGovMode::isLive()) {
+            if (EGovMode::isLive('face_liveness')) {
                 return ['status' => 502, 'data' => ['message' => 'Face liveness service is unavailable.']];
             }
             // Fall through to resilient generated token
         }
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('face_liveness')) {
             return ['status' => $response->status(), 'data' => ['message' => 'Face liveness session creation failed.']];
         }
 
@@ -83,13 +83,13 @@ class FaceLivenessService
                 }
             }
         } catch (\Exception $e) {
-            if (EGovMode::isLive()) {
+            if (EGovMode::isLive('face_liveness')) {
                 return ['status' => 502, 'data' => ['message' => 'Face liveness service is unavailable.']];
             }
             // Fall through to resilient mock result
         }
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('face_liveness')) {
             return ['status' => $response->status(), 'data' => ['message' => 'Face liveness result retrieval failed.']];
         }
 

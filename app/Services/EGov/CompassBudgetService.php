@@ -25,7 +25,7 @@ class CompassBudgetService
             'limit' => 100,
         ], $params);
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('compass')) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/saaodb', $query);
@@ -65,7 +65,7 @@ class CompassBudgetService
 
     public function getSaaodbDashboard(int $reportYear = 2026, string $sheetScope = 'summary'): array
     {
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('compass')) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/saaodb/dashboard', [
@@ -122,7 +122,7 @@ class CompassBudgetService
             'sheetScope' => 'agency',
         ], $params);
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('compass')) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/saaodb/entities', $query);
@@ -159,7 +159,7 @@ class CompassBudgetService
             'limit' => 100,
         ], $params);
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('compass')) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/nca', $query);
@@ -197,7 +197,7 @@ class CompassBudgetService
             'limit' => 100,
         ], $params);
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('compass')) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/saro', $query);
@@ -236,7 +236,7 @@ class CompassBudgetService
             'limit' => 100,
         ], $params);
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('compass')) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/lgsf', $query);
@@ -277,7 +277,7 @@ class CompassBudgetService
             'limit' => 25,
         ], $params);
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('compass')) {
             $response = Http::withHeaders([
                 'X-API-Key' => $this->apiKey,
             ])->timeout(20)->get(rtrim($this->baseUrl, '/') . '/api/v1/records/lgsf/dashboard', $query);
@@ -324,7 +324,7 @@ class CompassBudgetService
     {
         $utilizedAmount = $this->sumUtilizedGuarantees();
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('compass')) {
             // In live mode, report the DSWD entity's own figures. Previously
             // the national ₱7.5T cascade was returned labelled as the DSWD
             // program, which overstated the program's budget by orders of

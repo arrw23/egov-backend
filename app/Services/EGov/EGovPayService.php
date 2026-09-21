@@ -55,7 +55,7 @@ class EGovPayService
             'description' => $payload['description'] ?? null,
         ]));
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('pay')) {
             $response = Http::withHeaders([
                 'X-eGovPay-Token' => $token,
                 'Content-Type' => 'application/json; charset=utf-8',
@@ -89,7 +89,7 @@ class EGovPayService
             $token = 'test_' . $token;
         }
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('pay')) {
             $response = Http::withHeaders([
                 'X-eGovPay-Token' => $token,
                 'Content-Type' => 'application/json; charset=utf-8',
@@ -142,7 +142,7 @@ class EGovPayService
             $token = 'test_' . $token;
         }
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('pay')) {
             $response = Http::withHeaders([
                 'X-eGovPay-Token' => $token,
                 'Content-Type' => 'application/json; charset=utf-8',

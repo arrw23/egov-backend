@@ -43,7 +43,7 @@ class EGovChainService
      */
     public function isSimulated(): bool
     {
-        return EGovMode::isSandbox()
+        return EGovMode::isSandbox('chain')
             || empty(config('services.egov.chain.contract_address'))
             || $this->smartContractAddress === self::SIMULATED_CONTRACT;
     }

@@ -31,7 +31,7 @@ class EGovSSOService
             ];
         }
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('sso')) {
             $response = Http::asJson()->timeout(15)->post(rtrim($this->baseUrl, '/') . '/api/token', [
                 'exchange_code' => $exchangeCode,
                 'scope' => $scope ?: 'SSO_AUTHENTICATION',
@@ -78,7 +78,7 @@ class EGovSSOService
             ];
         }
 
-        if (EGovMode::isLive()) {
+        if (EGovMode::isLive('sso')) {
             $response = Http::withToken(str_replace('Bearer ', '', $bearerToken))->timeout(15)
                 ->post(rtrim($this->baseUrl, '/') . '/api/partner/sso_authentication');
             return ['status' => $response->status(), 'data' => $response->json() ?: ['message' => 'eGov SSO returned an empty response.']];
