@@ -17,5 +17,12 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // This service only speaks JSON. Left to the default, a request whose
+        // Accept header is not application/json took the authentication
+        // handler's redirect branch, which resolved route('login') — a route
+        // this app never defines — turning an honest 401 into a 500.
+        // Note this binds to the framework handler; while APP_DEBUG=true,
+        // Collision rebinds ExceptionHandler and shadows it. Ship with
+        // APP_DEBUG=false.
+        $exceptions->shouldRenderJsonWhen(fn () => true);
     })->create();
